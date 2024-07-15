@@ -4,3 +4,7 @@ main: me.bynect.boundaries.Boundaries
 api-version: '1.21'
 description: Boundaries...
 author: bynect
+commands:
+  boundary:
+    description: Open boundary mode
+    usage: /boundary
