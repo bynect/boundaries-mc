@@ -1,10 +1,11 @@
 plugins {
     kotlin("jvm") version "2.0.20-Beta2"
     id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("xyz.jpenilla.run-paper") version "2.3.0"
 }
 
 group = "me.bynect"
-version = "1.0-SNAPSHOT"
+version = "0.0.1"
 
 repositories {
     mavenCentral()
@@ -37,4 +38,9 @@ tasks.processResources {
     filesMatching("plugin.yml") {
         expand(props)
     }
+}
+
+tasks.runServer {
+    minecraftVersion("1.21")
+    jvmArgs("-Dcom.mojang.eula.agree=true")
 }

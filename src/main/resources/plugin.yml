@@ -1,4 +1,6 @@
 name: boundaries
-version: '1.0-SNAPSHOT'
+version: 0.0.1
 main: me.bynect.boundaries.Boundaries
 api-version: '1.21'
+description: Boundaries...
+author: bynect
