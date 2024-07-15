@@ -2,16 +2,18 @@ package me.bynect.boundaries
 
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.Bukkit
+import org.bukkit.plugin.Plugin
 
 class Boundaries : JavaPlugin() {
 
     override fun onEnable() {
-        // Plugin startup logic
+        val manager = Bukkit.getPluginManager()
+        manager.registerEvents(PlayerMovement(), this)
 
-        Bukkit.getLogger().info("Boundaries starting")
+        Bukkit.getLogger().info("Boundaries started")
     }
 
     override fun onDisable() {
-        // Plugin shutdown logic
+        Bukkit.getLogger().info("Boundaries finished")
     }
 }
