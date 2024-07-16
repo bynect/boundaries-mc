@@ -5,8 +5,6 @@ import org.bukkit.Bukkit
 
 class Boundaries : JavaPlugin() {
 
-    val boundaries = null
-
     override fun onEnable() {
         // Register commands
         this.getCommand("boundary")?.setExecutor(BoundaryExecutor())
