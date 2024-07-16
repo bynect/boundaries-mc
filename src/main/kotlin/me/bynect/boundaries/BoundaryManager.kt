@@ -4,7 +4,6 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
-import org.bukkit.Chunk
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
@@ -24,16 +23,19 @@ import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
+import java.nio.ByteBuffer
 
 object BoundaryManager : Listener {
 
     private val plugin = Bukkit.getPluginManager().getPlugin("boundaries") as Boundaries
 
-    private val guides = HashMap<String, MutableList<Location>>()
-
     // This tag is used to store the serialized items taken from the inventory
     val inventoryTag = NamespacedKey(plugin, "inventory")
     val inventoryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
+
+    // This tag is used to store the serialized chunk locations with guides
+    val blocksTag = NamespacedKey(plugin, "guides")
+    val blocksType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
 
     // This tag is used to store the owner of a chunk
     val chunkTag = NamespacedKey(plugin, "chunk")
@@ -111,24 +113,60 @@ object BoundaryManager : Listener {
         }
     }
 
-    private fun resetGuides(player: Player) {
-        val chunks = guides[player.name]
-        if (chunks != null) {
-            for (location in chunks) {
-                val changes: MutableList<BlockState> = mutableListOf()
+    private fun serializeLocation(location: Location): ByteArray {
+        return ByteBuffer.allocate(Double.SIZE_BYTES * 3 + location.world.name.length)
+            .putDouble(location.x)
+            .putDouble(location.y)
+            .putDouble(location.z)
+            .put(location.world.name.toByteArray())
+            .array()
+    }
 
-                for (x in (0..1)) {
-                    for (z in (0..1)) {
-                        for (y in (-64..320)) {
-                            val state = location.chunk.getBlock(x * 15, y, z * 15).state
-                            state.update(true)
-                            changes.add(state)
-                        }
-                    }
+    private fun deserializeLocation(array: ByteArray): Location {
+        val world = Bukkit.getWorld(String(array, Double.SIZE_BYTES * 3, array.size - Double.SIZE_BYTES * 3))
+        val buffer = ByteBuffer.wrap(array)
+        return Location(world, buffer.getDouble(), buffer.getDouble(), buffer.getDouble())
+    }
+
+    private fun isSelected(player: Player, location: Location): Boolean {
+        val pdc = player.inventory.itemInMainHand.itemMeta.persistentDataContainer
+        val locations = pdc.get(blocksTag, blocksType)
+        return locations != null && locations.contains(serializeLocation(location))
+    }
+
+    private fun selectGuide(player: Player, location: Location) {
+        val changes: MutableList<BlockState> = mutableListOf()
+        for (x in (0..1)) {
+            for (z in (0..1)) {
+                for (y in (-64..320)) {
+                    val state = location.chunk.getBlock(x * 15, y, z * 15).state
+                    state.type = Material.YELLOW_CONCRETE
+                    changes.add(state)
                 }
-
-                player.sendBlockChanges(changes)
             }
+        }
+        player.sendBlockChanges(changes)
+    }
+
+    private fun deselectGuide(player: Player, location: Location) {
+        val changes: MutableList<BlockState> = mutableListOf()
+        for (x in (0..1)) {
+            for (z in (0..1)) {
+                for (y in (-64..320)) {
+                    val state = location.chunk.getBlock(x * 15, y, z * 15).state
+                    state.update(true)
+                    changes.add(state)
+                }
+            }
+        }
+        player.sendBlockChanges(changes)
+    }
+
+    private fun resetGuides(player: Player, wand: ItemStack) {
+        val chunks = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType)
+        if (chunks != null) {
+            for (location in chunks)
+                deselectGuide(player, deserializeLocation(location))
         }
     }
 
@@ -160,43 +198,42 @@ object BoundaryManager : Listener {
     }
 
     private fun quitBoundaryMode(player: Player, wand: ItemStack) {
+        resetGuides(player, wand)
+
         val items = deserializeItems(wand)
         items.slice(0..8).zip((0..8)).forEach { (item, slot) ->
             player.inventory.setItem(slot, item)
         }
         player.inventory.setItemInOffHand(items.last())
         untrackPlayer(player)
-        resetGuides(player)
     }
 
     @EventHandler
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
-        if (isTracked(player)) {
-            event.isCancelled = isWand(event.item)
+        if (isTracked(player) && isWand(event.item)) {
+            event.isCancelled = true
+            val wand = event.item!!
 
             if (event.action.isRightClick && event.interactionPoint != null) {
                 val chunk = event.interactionPoint!!.chunk
                 val center = chunk.getBlock(8, 0, 8).location
 
-                val changes: MutableList<BlockState> = mutableListOf()
-                for (x in (0..1)) {
-                    for (z in (0..1)) {
-                        for (y in (-64..320)) {
-                            val state = chunk.getBlock(x * 15, y, z * 15).state
-                            state.type = Material.YELLOW_CONCRETE
-                            changes.add(state)
-                        }
-                    }
-                }
+                val wandMeta = wand.itemMeta
+                val list = wandMeta.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
 
-                event.player.sendBlockChanges(changes)
-
-                if (guides[player.name] != null) {
-                    guides[player.name]!!.add(center)
+                if (isSelected(player, center)) {
+                    deselectGuide(player, center)
+                    wandMeta.persistentDataContainer.set(blocksTag, blocksType,
+                        list.minus(serializeLocation(center)))
                 } else {
-                    guides[player.name] = mutableListOf(center)
+                    selectGuide(player, center)
+                    wandMeta.persistentDataContainer.set(blocksTag, blocksType,
+                        list.plus(serializeLocation(center)))
                 }
+
+                // NOTE: Reapply itemMeta!!!
+                wand.itemMeta = wandMeta
             }
         }
     }
@@ -250,11 +287,12 @@ object BoundaryManager : Listener {
             event.drops.removeIf(predicate)
 
             if (wand != null) {
+                resetGuides(player, wand)
+
                 val items = deserializeItems(wand)
                 event.drops.addAll(items)
             }
             untrackPlayer(player)
-            resetGuides(player)
         }
     }
 }
