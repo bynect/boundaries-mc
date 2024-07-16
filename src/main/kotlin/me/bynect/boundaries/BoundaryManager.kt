@@ -1,5 +1,7 @@
 package me.bynect.boundaries
 
+import com.comphenix.protocol.PacketType
+import com.comphenix.protocol.wrappers.EnumWrappers
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
@@ -147,15 +149,18 @@ object BoundaryManager : Listener {
             val location = event.interactionPoint
 
             if (event.action.isRightClick && location != null) {
-                val border = Bukkit.getServer().createWorldBorder()
-                border.size = 16.0
-                border.warningDistance = 0
-                border.center = location.chunk.getBlock(8, 0, 8).location
-                border.damageAmount = 0.0
-                border.warningTime = 1000000000
+                val packet = plugin.protocolManager.createPacket(PacketType.Play.Server.INITIALIZE_BORDER)
 
-                player.worldBorder = border
+                packet.doubles.writeSafely(0, location.chunk.getBlock(8, 0, 8).location.x)
+                packet.doubles.writeSafely(1, location.chunk.getBlock(8, 0, 8).location.z)
 
+                packet.doubles.writeSafely(2, 16.0)
+                packet.doubles.writeSafely(3, 16.0)
+
+                packet.longs.writeSafely(4, 0)
+                packet.longs.writeSafely(6, 0)
+
+                plugin.protocolManager.sendServerPacket(player, packet)
             }
         }
     }
