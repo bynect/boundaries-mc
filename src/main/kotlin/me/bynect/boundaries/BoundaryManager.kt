@@ -1,6 +1,5 @@
 package me.bynect.boundaries
 
-import com.google.gson.Gson
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
@@ -11,6 +10,7 @@ import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.entity.EntityPickupItemEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.player.PlayerDropItemEvent
@@ -19,11 +19,10 @@ import org.bukkit.event.player.PlayerItemHeldEvent
 import org.bukkit.event.player.PlayerSwapHandItemsEvent
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
+import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
 
 object BoundaryManager : Listener {
-
-    val boundaryMode : MutableList<String> = mutableListOf()
 
     private val plugin = Bukkit.getPluginManager().getPlugin("boundaries") as Boundaries
 
@@ -31,15 +30,33 @@ object BoundaryManager : Listener {
     val inventoryTag = NamespacedKey(plugin, "inventory")
     val inventoryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
 
+    // This tag is used to store the list of tracked users
+    val boundaryTag = NamespacedKey(plugin, "mode")
+    val boundaryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.STRING)
+
     private fun isWand(item: ItemStack?): Boolean {
         return item != null && item.hasItemMeta() &&
                 item.itemMeta.persistentDataContainer.has(inventoryTag, inventoryType)
     }
 
-    fun enterBoundaryMode(player: Player): Boolean {
-        if (boundaryMode.contains(player.name))
-            return false
+    private fun isTracked(player: Player): Boolean {
+        val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
+        return pdc.get(boundaryTag, boundaryType)?.contains(player.name) ?: false
+    }
 
+    private fun trackPlayer(player: Player) {
+        val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
+        val list = pdc.get(boundaryTag, boundaryType) ?: listOf()
+        pdc.set(boundaryTag, boundaryType, list.plus(player.name))
+    }
+
+    private fun untrackPlayer(player: Player) {
+        val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
+        val list = pdc.get(boundaryTag, boundaryType)?.minus(player.name) ?: listOf()
+        pdc.set(boundaryTag, boundaryType, list)
+    }
+
+    private fun serializeItems(inventory: PlayerInventory): ItemStack {
         val wand = ItemStack.of(Material.BLAZE_ROD)
         val wandMeta = wand.itemMeta
 
@@ -61,76 +78,96 @@ object BoundaryManager : Listener {
                 Component
                     .text("Drop this item to quit boundary mode")
                     .color(NamedTextColor.LIGHT_PURPLE)
-                ),
+            ),
         )
 
         wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
         wandMeta.addItemFlags(ItemFlag.HIDE_DESTROYS, ItemFlag.HIDE_ENCHANTS)
 
         val serialized = (0..8)
-            .map { i -> player.inventory.getItem(i) }
-            .plus(player.inventory.itemInOffHand)
+            .map { i -> inventory.getItem(i) }
+            .plus(inventory.itemInOffHand)
             .map { item -> if (item == null || item.type == Material.AIR) byteArrayOf() else item.serializeAsBytes() }
 
         wandMeta.persistentDataContainer.set(inventoryTag, inventoryType, serialized)
         wand.itemMeta = wandMeta
+        return wand
+    }
 
+    private fun deserializeItems(wand: ItemStack): List<ItemStack?> {
+        return wand.persistentDataContainer.get(inventoryTag, inventoryType)!!.map { data ->
+            if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
+        }
+    }
+
+    fun enterBoundaryMode(player: Player): Boolean {
+        if (isTracked(player))
+            return false
+
+        val wand = serializeItems(player.inventory)
         (0..8).forEach { i -> player.inventory.setItem(i, null) }
         player.inventory.setItemInOffHand(null)
         player.inventory.setItemInMainHand(wand)
 
-        boundaryMode.add(player.name)
+        trackPlayer(player)
         return true
     }
 
-    fun quitBoundaryMode(player: Player) {
+    private fun quitBoundaryMode(player: Player) {
         // FIXME: Ugly
         val wand = player.inventory.getItem(
-            (0..8).find {
-                i -> isWand(player.inventory.getItem(i))
+            (0..8).find { i ->
+                isWand(player.inventory.getItem(i))
             }!!
         )!!
 
-        val listType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
-        val items = wand.persistentDataContainer.get(inventoryTag, inventoryType)!!.map {
-            data -> if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
-        }
+        quitBoundaryMode(player, wand)
+    }
 
-        items.slice(0..8).zip((0..8)).forEach {
-            (item, slot) -> player.inventory.setItem(slot, item)
+    private fun quitBoundaryMode(player: Player, wand: ItemStack) {
+        val items = deserializeItems(wand)
+        items.slice(0..8).zip((0..8)).forEach { (item, slot) ->
+            player.inventory.setItem(slot, item)
         }
         player.inventory.setItemInOffHand(items.last())
-
-        boundaryMode.remove(player.name)
+        untrackPlayer(player)
     }
 
     @EventHandler
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
-        if (boundaryMode.contains(player.name)) {
+        if (isTracked(player)) {
             event.isCancelled = isWand(event.item)
             quitBoundaryMode(player)
         }
     }
 
     @EventHandler
+    fun onPickup(event: EntityPickupItemEvent) {
+        if (isWand(event.item.itemStack))
+            event.item.remove()
+    }
+
+    @EventHandler
     fun onItemHeld(event: PlayerItemHeldEvent) {
         val player = event.player
-        if (boundaryMode.contains(player.name))
+        if (isTracked(player)) {
+            event.isCancelled = true
             quitBoundaryMode(player)
+        }
     }
 
     @EventHandler
     fun onInventoryClick(event: InventoryClickEvent) {
         val player = Bukkit.getPlayer(event.whoClicked.name)!!
-        if (boundaryMode.contains(player.name))
+        if (isTracked(player))
             quitBoundaryMode(player)
     }
 
     @EventHandler
     fun onSwapHand(event: PlayerSwapHandItemsEvent) {
         val player = event.player
-        if (boundaryMode.contains(player.name)) {
+        if (isTracked(player)) {
             event.isCancelled = true
             quitBoundaryMode(player)
         }
@@ -139,8 +176,8 @@ object BoundaryManager : Listener {
     @EventHandler
     fun onDrop(event: PlayerDropItemEvent) {
         val player = event.player
-        if (boundaryMode.contains(player.name)) {
-            quitBoundaryMode(player)
+        if (isTracked(player)) {
+            quitBoundaryMode(player, event.itemDrop.itemStack)
             event.itemDrop.remove()
         }
     }
@@ -148,7 +185,14 @@ object BoundaryManager : Listener {
     @EventHandler
     fun onDeath(event: PlayerDeathEvent) {
         val player = event.player
-        if (boundaryMode.contains(player.name))
-            quitBoundaryMode(player)
+        if (isTracked(player)) {
+            val predicate = { item: ItemStack -> isWand(item) }
+            val wand = event.drops.find(predicate)
+            event.drops.removeIf(predicate)
+
+            val items = deserializeItems(wand!!)
+            event.drops.addAll(items)
+            untrackPlayer(player)
+        }
     }
 }
