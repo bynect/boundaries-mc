@@ -6,6 +6,7 @@ import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
+import org.bukkit.WorldBorder
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -48,12 +49,14 @@ object BoundaryManager : Listener {
         val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
         val list = pdc.get(boundaryTag, boundaryType) ?: listOf()
         pdc.set(boundaryTag, boundaryType, list.plus(player.name))
+        Bukkit.getLogger().info("Track boundary mode " + player.name)
     }
 
     private fun untrackPlayer(player: Player) {
         val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
         val list = pdc.get(boundaryTag, boundaryType)?.minus(player.name) ?: listOf()
         pdc.set(boundaryTag, boundaryType, list)
+        Bukkit.getLogger().info("Untrack boundary mode " + player.name)
     }
 
     private fun serializeItems(inventory: PlayerInventory): ItemStack {
@@ -115,13 +118,16 @@ object BoundaryManager : Listener {
 
     private fun quitBoundaryMode(player: Player) {
         // FIXME: Ugly
-        val wand = player.inventory.getItem(
-            (0..8).find { i ->
-                isWand(player.inventory.getItem(i))
-            }!!
-        )!!
+        var wand: ItemStack? = null
+        for (i in (0..8)) {
+            val item = player.inventory.getItem(i)
+            if (isWand(item)) {
+              wand = item
+              break
+            }
+        }
 
-        quitBoundaryMode(player, wand)
+        quitBoundaryMode(player, wand!!)
     }
 
     private fun quitBoundaryMode(player: Player, wand: ItemStack) {
@@ -138,7 +144,19 @@ object BoundaryManager : Listener {
         val player = event.player
         if (isTracked(player)) {
             event.isCancelled = isWand(event.item)
-            quitBoundaryMode(player)
+            val location = event.interactionPoint
+
+            if (event.action.isRightClick && location != null) {
+                val border = Bukkit.getServer().createWorldBorder()
+                border.size = 16.0
+                border.warningDistance = 0
+                border.center = location.chunk.getBlock(8, 0, 8).location
+                border.damageAmount = 0.0
+                border.warningTime = 1000000000
+
+                player.worldBorder = border
+
+            }
         }
     }
 
@@ -190,8 +208,10 @@ object BoundaryManager : Listener {
             val wand = event.drops.find(predicate)
             event.drops.removeIf(predicate)
 
-            val items = deserializeItems(wand!!)
-            event.drops.addAll(items)
+            if (wand != null) {
+                val items = deserializeItems(wand)
+                event.drops.addAll(items)
+            }
             untrackPlayer(player)
         }
     }

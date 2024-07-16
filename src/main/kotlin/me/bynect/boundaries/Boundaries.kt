@@ -1,5 +1,7 @@
 package me.bynect.boundaries
 
+import me.bynect.boundaries.BoundaryManager.boundaryTag
+import me.bynect.boundaries.BoundaryManager.boundaryType
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.Bukkit
 
@@ -15,6 +17,8 @@ class Boundaries : JavaPlugin() {
         manager.registerEvents(BoundaryManager, this)
 
         Bukkit.getLogger().info("Boundaries started")
+
+        Bukkit.getLogger().info(Bukkit.getServer().worlds[0].persistentDataContainer.get(boundaryTag, boundaryType).toString())
     }
 
     override fun onDisable() {
