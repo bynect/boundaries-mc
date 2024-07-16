@@ -1,14 +1,14 @@
 package me.bynect.boundaries
 
-import com.comphenix.protocol.PacketType
-import com.comphenix.protocol.wrappers.EnumWrappers
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
+import org.bukkit.Chunk
+import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
-import org.bukkit.WorldBorder
+import org.bukkit.block.BlockState
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -29,9 +29,15 @@ object BoundaryManager : Listener {
 
     private val plugin = Bukkit.getPluginManager().getPlugin("boundaries") as Boundaries
 
+    private val guides = HashMap<String, MutableList<Location>>()
+
     // This tag is used to store the serialized items taken from the inventory
     val inventoryTag = NamespacedKey(plugin, "inventory")
     val inventoryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
+
+    // This tag is used to store the owner of a chunk
+    val chunkTag = NamespacedKey(plugin, "chunk")
+    val chunkType = PersistentDataType.STRING
 
     // This tag is used to store the list of tracked users
     val boundaryTag = NamespacedKey(plugin, "mode")
@@ -105,6 +111,27 @@ object BoundaryManager : Listener {
         }
     }
 
+    private fun resetGuides(player: Player) {
+        val chunks = guides[player.name]
+        if (chunks != null) {
+            for (location in chunks) {
+                val changes: MutableList<BlockState> = mutableListOf()
+
+                for (x in (0..1)) {
+                    for (z in (0..1)) {
+                        for (y in (-64..320)) {
+                            val state = location.chunk.getBlock(x * 15, y, z * 15).state
+                            state.update(true)
+                            changes.add(state)
+                        }
+                    }
+                }
+
+                player.sendBlockChanges(changes)
+            }
+        }
+    }
+
     fun enterBoundaryMode(player: Player): Boolean {
         if (isTracked(player))
             return false
@@ -139,6 +166,7 @@ object BoundaryManager : Listener {
         }
         player.inventory.setItemInOffHand(items.last())
         untrackPlayer(player)
+        resetGuides(player)
     }
 
     @EventHandler
@@ -146,21 +174,29 @@ object BoundaryManager : Listener {
         val player = event.player
         if (isTracked(player)) {
             event.isCancelled = isWand(event.item)
-            val location = event.interactionPoint
 
-            if (event.action.isRightClick && location != null) {
-                val packet = plugin.protocolManager.createPacket(PacketType.Play.Server.INITIALIZE_BORDER)
+            if (event.action.isRightClick && event.interactionPoint != null) {
+                val chunk = event.interactionPoint!!.chunk
+                val center = chunk.getBlock(8, 0, 8).location
 
-                packet.doubles.writeSafely(0, location.chunk.getBlock(8, 0, 8).location.x)
-                packet.doubles.writeSafely(1, location.chunk.getBlock(8, 0, 8).location.z)
+                val changes: MutableList<BlockState> = mutableListOf()
+                for (x in (0..1)) {
+                    for (z in (0..1)) {
+                        for (y in (-64..320)) {
+                            val state = chunk.getBlock(x * 15, y, z * 15).state
+                            state.type = Material.YELLOW_CONCRETE
+                            changes.add(state)
+                        }
+                    }
+                }
 
-                packet.doubles.writeSafely(2, 16.0)
-                packet.doubles.writeSafely(3, 16.0)
+                event.player.sendBlockChanges(changes)
 
-                packet.longs.writeSafely(4, 0)
-                packet.longs.writeSafely(6, 0)
-
-                plugin.protocolManager.sendServerPacket(player, packet)
+                if (guides[player.name] != null) {
+                    guides[player.name]!!.add(center)
+                } else {
+                    guides[player.name] = mutableListOf(center)
+                }
             }
         }
     }
@@ -218,6 +254,7 @@ object BoundaryManager : Listener {
                 event.drops.addAll(items)
             }
             untrackPlayer(player)
+            resetGuides(player)
         }
     }
 }
