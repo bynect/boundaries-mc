@@ -5,13 +5,16 @@ import org.bukkit.Bukkit
 
 class Boundaries : JavaPlugin() {
 
-    val boundaries  = null
+    val boundaries = null
 
     override fun onEnable() {
-        val manager = Bukkit.getPluginManager()
-        manager.registerEvents(PlayerMovement(), this)
-
+        // Register commands
         this.getCommand("boundary")?.setExecutor(BoundaryExecutor())
+
+        // Register listeners
+        val manager = Bukkit.getPluginManager()
+        manager.registerEvents(MovementManager(), this)
+        manager.registerEvents(BoundaryManager, this)
 
         Bukkit.getLogger().info("Boundaries started")
     }
