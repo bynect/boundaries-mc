@@ -2,8 +2,6 @@ package me.bynect.boundaries
 
 import com.comphenix.protocol.ProtocolLibrary
 import com.comphenix.protocol.ProtocolManager
-import me.bynect.boundaries.BoundaryManager.boundaryTag
-import me.bynect.boundaries.BoundaryManager.boundaryType
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.Bukkit
 
@@ -19,7 +17,7 @@ class Boundaries : JavaPlugin() {
 
         // Register listeners
         val manager = Bukkit.getPluginManager()
-        manager.registerEvents(MovementManager(), this)
+        manager.registerEvents(ChunkManager, this)
         manager.registerEvents(BoundaryManager, this)
 
         Bukkit.getLogger().info("Boundaries enabled")

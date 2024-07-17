@@ -1,6 +1,8 @@
 package me.bynect.boundaries
 
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.ComponentBuilder
+import net.kyori.adventure.text.TextComponent
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
@@ -34,10 +36,6 @@ object BoundaryManager : Listener {
     // This tag is used to store the serialized chunk locations with guides
     val blocksTag = NamespacedKey(plugin, "guides")
     val blocksType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
-
-    // This tag is used to store the owner of a chunk
-    val chunkTag = NamespacedKey(plugin, "chunk")
-    val chunkType = PersistentDataType.STRING
 
     // This tag is used to store the list of tracked users
     val boundaryTag = NamespacedKey(plugin, "mode")
@@ -99,6 +97,11 @@ object BoundaryManager : Listener {
                 Component
                     .text("unclaimed territory you want to occupy")
                     .color(NamedTextColor.WHITE),
+                Component.text(""),
+                Component
+                    .text("Selected chunks: 0")
+                    .color(NamedTextColor.GOLD),
+                Component.text(""),
                 Component
                     .text("Drop this item to quit boundary mode")
                     .color(NamedTextColor.LIGHT_PURPLE)
@@ -214,32 +217,67 @@ object BoundaryManager : Listener {
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
         if (isTracked(player) && isWand(event.item)) {
-            event.isCancelled = true
             val wand = event.item!!
+            val wandMeta = wand.itemMeta
 
-            if (event.action.isRightClick && event.interactionPoint != null) {
-                val chunk = event.interactionPoint!!.chunk
-                val center = chunk.getBlock(8, 0, 8).location
+            val list = wandMeta.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
+            var size = list.size
 
-                val wandMeta = wand.itemMeta
-                val list = wandMeta.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
-                val serialized = serializeLocation(center)
+            if (event.action.isRightClick) {
+                if (player.isSneaking) {
+                    if (size == 0) {
+                        player.sendActionBar(
+                            Component
+                                .text("Nothing to claim")
+                                .color(NamedTextColor.RED)
+                        )
+                    } else {
+                        player.sendActionBar(
+                            Component
+                                .text("Claiming $size chunks")
+                                .color(NamedTextColor.GOLD)
+                                .decorate(TextDecoration.BOLD)
+                        )
 
-                if (isSelected(wand, center)) {
-                    Bukkit.getLogger().info("DESEL $list")
-                    deselectGuide(player, center)
-                    wandMeta.persistentDataContainer.set(blocksTag, blocksType,
-                        list.filterNot { bytes -> bytes.contentEquals(serialized) } )
-                } else {
-                    Bukkit.getLogger().info("SEL $list")
-                    selectGuide(player, center)
-                    wandMeta.persistentDataContainer.set(blocksTag, blocksType,
-                        list.plusElement(serialized))
+                        val chunks = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType)
+                        if (chunks != null) {
+                            for (location in chunks)
+                                ChunkManager.changeOwner(deserializeLocation(location), player.name)
+                        }
+                    }
+
+                    quitBoundaryMode(player, wand)
+                } else if (event.interactionPoint != null) {
+                    val chunk = event.interactionPoint!!.chunk
+                    val center = chunk.getBlock(8, 0, 8).location
+                    val serialized = serializeLocation(center)
+
+                    if (isSelected(wand, center)) {
+                        Bukkit.getLogger().info("${player.name} deselected $center")
+                        deselectGuide(player, center)
+                        wandMeta.persistentDataContainer.set(blocksTag, blocksType,
+                            list.filterNot { bytes -> bytes.contentEquals(serialized) } )
+                        size--
+                    } else {
+                        Bukkit.getLogger().info("${player.name} selected $center")
+                        selectGuide(player, center)
+                        wandMeta.persistentDataContainer.set(blocksTag, blocksType,
+                            list.plusElement(serialized))
+                        size++
+                    }
+
+                    val lore = wandMeta.lore()!!
+                    lore[3] = Component
+                        .text("Selected chunks: $size")
+                        .color(NamedTextColor.GOLD)
+                    wandMeta.lore(lore)
+
+                    // NOTE: Reapply itemMeta!!!
+                    wand.itemMeta = wandMeta
                 }
-
-                // NOTE: Reapply itemMeta!!!
-                wand.itemMeta = wandMeta
             }
+
+            event.isCancelled = true
         }
     }
 

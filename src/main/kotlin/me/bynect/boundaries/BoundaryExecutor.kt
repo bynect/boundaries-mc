@@ -29,7 +29,7 @@ class BoundaryExecutor : CommandExecutor {
                     )
                 )
             } else {
-                player.sendMessage(
+                player.sendActionBar(
                     Component
                         .text("Already in boundary mode")
                         .color(NamedTextColor.RED)
