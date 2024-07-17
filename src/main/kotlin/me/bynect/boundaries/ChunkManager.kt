@@ -4,10 +4,12 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
+import org.bukkit.GameMode
 import org.bukkit.Location
 import org.bukkit.NamespacedKey
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.persistence.PersistentDataType
 
@@ -50,6 +52,16 @@ object ChunkManager : Listener {
                         )
                 )
             }
+
+            if ((owner == null || event.player.name == owner) && event.player.gameMode == GameMode.ADVENTURE)
+                event.player.gameMode = GameMode.SURVIVAL
+            else if (event.player.gameMode == GameMode.SURVIVAL)
+                event.player.gameMode = GameMode.ADVENTURE
         }
+    }
+
+    @EventHandler
+    fun onBlockBreak(event: BlockBreakEvent) {
+        // TODO Block explosions, pvp, etc
     }
 }
