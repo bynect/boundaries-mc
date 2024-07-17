@@ -9,16 +9,14 @@ import org.bukkit.Material
 import org.bukkit.NamespacedKey
 import org.bukkit.block.BlockState
 import org.bukkit.enchantments.Enchantment
+import org.bukkit.entity.Item
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityPickupItemEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.inventory.InventoryClickEvent
-import org.bukkit.event.player.PlayerDropItemEvent
-import org.bukkit.event.player.PlayerInteractEvent
-import org.bukkit.event.player.PlayerItemHeldEvent
-import org.bukkit.event.player.PlayerSwapHandItemsEvent
+import org.bukkit.event.player.*
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
@@ -44,6 +42,19 @@ object BoundaryManager : Listener {
     // This tag is used to store the list of tracked users
     val boundaryTag = NamespacedKey(plugin, "mode")
     val boundaryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.STRING)
+
+    // FIXME: Ugly
+    private fun findWand(player: Player): ItemStack {
+        var wand: ItemStack? = null
+        for (i in (0..8)) {
+            val item = player.inventory.getItem(i)
+            if (isWand(item)) {
+                wand = item
+                break
+            }
+        }
+        return wand!!
+    }
 
     private fun isWand(item: ItemStack?): Boolean {
         return item != null && item.hasItemMeta() &&
@@ -128,10 +139,10 @@ object BoundaryManager : Listener {
         return Location(world, buffer.getDouble(), buffer.getDouble(), buffer.getDouble())
     }
 
-    private fun isSelected(player: Player, location: Location): Boolean {
-        val pdc = player.inventory.itemInMainHand.itemMeta.persistentDataContainer
-        val locations = pdc.get(blocksTag, blocksType)
-        return locations != null && locations.contains(serializeLocation(location))
+    private fun isSelected(wand: ItemStack, location: Location): Boolean {
+        val locations = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType)
+        val serialized = serializeLocation(location)
+        return locations != null && locations.any { bytes -> bytes.contentEquals(serialized) }
     }
 
     private fun selectGuide(player: Player, location: Location) {
@@ -184,17 +195,8 @@ object BoundaryManager : Listener {
     }
 
     private fun quitBoundaryMode(player: Player) {
-        // FIXME: Ugly
-        var wand: ItemStack? = null
-        for (i in (0..8)) {
-            val item = player.inventory.getItem(i)
-            if (isWand(item)) {
-              wand = item
-              break
-            }
-        }
-
-        quitBoundaryMode(player, wand!!)
+        val wand = findWand(player)
+        quitBoundaryMode(player, wand)
     }
 
     private fun quitBoundaryMode(player: Player, wand: ItemStack) {
@@ -221,15 +223,18 @@ object BoundaryManager : Listener {
 
                 val wandMeta = wand.itemMeta
                 val list = wandMeta.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
+                val serialized = serializeLocation(center)
 
-                if (isSelected(player, center)) {
+                if (isSelected(wand, center)) {
+                    Bukkit.getLogger().info("DESEL $list")
                     deselectGuide(player, center)
                     wandMeta.persistentDataContainer.set(blocksTag, blocksType,
-                        list.minus(serializeLocation(center)))
+                        list.filterNot { bytes -> bytes.contentEquals(serialized) } )
                 } else {
+                    Bukkit.getLogger().info("SEL $list")
                     selectGuide(player, center)
                     wandMeta.persistentDataContainer.set(blocksTag, blocksType,
-                        list.plus(serializeLocation(center)))
+                        list.plusElement(serialized))
                 }
 
                 // NOTE: Reapply itemMeta!!!
@@ -293,6 +298,23 @@ object BoundaryManager : Listener {
                 event.drops.addAll(items)
             }
             untrackPlayer(player)
+        }
+    }
+
+    @EventHandler
+    fun onPlayerJoin(event: PlayerJoinEvent) {
+        val player = event.player
+        if (isTracked(player)) {
+            val wand = findWand(player)
+            val chunks = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType) ?: return
+
+            class ShowGuides : Runnable {
+                override fun run() {
+                    for (location in chunks)
+                        selectGuide(player, deserializeLocation(location))
+                }
+            }
+            Bukkit.getServer().scheduler.runTaskLaterAsynchronously(plugin, ShowGuides(), 20L)
         }
     }
 }
