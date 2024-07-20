@@ -51,6 +51,8 @@ object ChunkManager : Listener {
                                 .decorate(TextDecoration.BOLD)
                         )
                 )
+            } else {
+                event.player.sendActionBar(Component.text(""))
             }
 
             if ((owner == null || event.player.name == owner) && event.player.gameMode == GameMode.ADVENTURE)

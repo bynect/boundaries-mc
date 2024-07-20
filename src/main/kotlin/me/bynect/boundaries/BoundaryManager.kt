@@ -19,6 +19,7 @@ import org.bukkit.event.entity.EntityPickupItemEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.player.*
+import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
@@ -41,18 +42,20 @@ object BoundaryManager : Listener {
     private fun spawnActionBar(player: Player) {
         class ShowMode : BukkitRunnable() {
             override fun run() {
-                if (player.persistentDataContainer.has(inventoryTag))
+                if (player.persistentDataContainer.has(inventoryTag)) {
                     player.sendActionBar(
                         Component
                             .text("Boundary editor mode")
                             .color(NamedTextColor.GOLD)
                             .decorate(TextDecoration.ITALIC)
                     )
-                else
+                } else {
+                    player.sendActionBar(Component.text(""))
                     cancel()
+                }
             }
         }
-        ShowMode().runTaskTimer(plugin, 2L, 20L)
+        ShowMode().runTaskTimer(plugin, 0L, 20L)
     }
 
     private fun isTracked(player: Player): Boolean {
@@ -181,7 +184,7 @@ object BoundaryManager : Listener {
             ),
         )
 
-        wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
+        //wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
         wandMeta.addItemFlags(ItemFlag.HIDE_DESTROYS, ItemFlag.HIDE_ENCHANTS)
         wand.itemMeta = wandMeta
 
@@ -207,7 +210,7 @@ object BoundaryManager : Listener {
     @EventHandler(ignoreCancelled = true)
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
-        if (isTracked(player)) {
+        if (isTracked(player) && event.hand == EquipmentSlot.HAND) {
             val list = player.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
             var size = list.size
 
@@ -232,8 +235,8 @@ object BoundaryManager : Listener {
                     }
 
                     quitBoundaryMode(player)
-                } else if (event.interactionPoint != null) {
-                    val chunk = event.interactionPoint!!.chunk
+                } else {
+                    val chunk = event.interactionPoint?.chunk ?: player.chunk
                     val center = chunk.getBlock(8, 0, 8).location
                     val serialized = serializeLocation(center)
 
@@ -287,7 +290,7 @@ object BoundaryManager : Listener {
         val player = event.player
         if (isTracked(player)) {
             quitBoundaryMode(player)
-            //event.itemDrop.remove()
+            event.itemDrop.remove()
         }
     }
 
