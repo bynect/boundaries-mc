@@ -23,6 +23,7 @@ import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
+import org.bukkit.scheduler.BukkitRunnable
 import java.nio.ByteBuffer
 
 object BoundaryManager : Listener {
@@ -30,100 +31,60 @@ object BoundaryManager : Listener {
     private val plugin = Bukkit.getPluginManager().getPlugin("boundaries") as Boundaries
 
     // This tag is used to store the serialized items taken from the inventory
-    val inventoryTag = NamespacedKey(plugin, "inventory")
+    val inventoryTag = NamespacedKey(plugin, "savedInventory")
     val inventoryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
 
     // This tag is used to store the serialized chunk locations with guides
-    val blocksTag = NamespacedKey(plugin, "guides")
+    val blocksTag = NamespacedKey(plugin, "guideBlocks")
     val blocksType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
 
-    // This tag is used to store the list of tracked users
-    val boundaryTag = NamespacedKey(plugin, "mode")
-    val boundaryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.STRING)
-
-    // FIXME: Ugly
-    private fun findWand(player: Player): ItemStack {
-        var wand: ItemStack? = null
-        for (i in (0..8)) {
-            val item = player.inventory.getItem(i)
-            if (isWand(item)) {
-                wand = item
-                break
+    private fun spawnActionBar(player: Player) {
+        class ShowMode : BukkitRunnable() {
+            override fun run() {
+                if (player.persistentDataContainer.has(inventoryTag))
+                    player.sendActionBar(
+                        Component
+                            .text("Boundary editor mode")
+                            .color(NamedTextColor.GOLD)
+                            .decorate(TextDecoration.ITALIC)
+                    )
+                else
+                    cancel()
             }
         }
-        return wand!!
-    }
-
-    private fun isWand(item: ItemStack?): Boolean {
-        return item != null && item.hasItemMeta() &&
-                item.itemMeta.persistentDataContainer.has(inventoryTag, inventoryType)
+        ShowMode().runTaskTimer(plugin, 2L, 20L)
     }
 
     private fun isTracked(player: Player): Boolean {
-        val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
-        return pdc.get(boundaryTag, boundaryType)?.contains(player.name) ?: false
+        return player.persistentDataContainer.has(inventoryTag, inventoryType)
     }
 
     private fun trackPlayer(player: Player) {
-        val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
-        val list = pdc.get(boundaryTag, boundaryType) ?: listOf()
-        pdc.set(boundaryTag, boundaryType, list.plus(player.name))
+        val items = serializeItems(player.inventory)
+        player.persistentDataContainer.set(inventoryTag, inventoryType, items)
+
+        (0..8).forEach { i -> player.inventory.setItem(i, null) }
+        player.inventory.setItemInOffHand(null)
+
         Bukkit.getLogger().info("Track boundary mode " + player.name)
     }
 
     private fun untrackPlayer(player: Player) {
-        val pdc = Bukkit.getServer().worlds[0].persistentDataContainer
-        val list = pdc.get(boundaryTag, boundaryType)?.minus(player.name) ?: listOf()
-        pdc.set(boundaryTag, boundaryType, list)
+        player.persistentDataContainer.remove(inventoryTag)
+        player.persistentDataContainer.remove(blocksTag)
         Bukkit.getLogger().info("Untrack boundary mode " + player.name)
     }
 
-    private fun serializeItems(inventory: PlayerInventory): ItemStack {
-        val wand = ItemStack.of(Material.BLAZE_ROD)
-        val wandMeta = wand.itemMeta
-
-        wandMeta.displayName(
-            Component
-                .text("Boundary editor")
-                .decorate(TextDecoration.BOLD)
-                .color(NamedTextColor.LIGHT_PURPLE)
-        )
-
-        wandMeta.lore(
-            listOf(
-                Component
-                    .text("Select the boundary you want to edit or an")
-                    .color(NamedTextColor.WHITE),
-                Component
-                    .text("unclaimed territory you want to occupy")
-                    .color(NamedTextColor.WHITE),
-                Component.text(""),
-                Component
-                    .text("Selected chunks: 0")
-                    .color(NamedTextColor.GOLD),
-                Component.text(""),
-                Component
-                    .text("Drop this item to quit boundary mode")
-                    .color(NamedTextColor.LIGHT_PURPLE)
-            ),
-        )
-
-        wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
-        wandMeta.addItemFlags(ItemFlag.HIDE_DESTROYS, ItemFlag.HIDE_ENCHANTS)
-
-        val serialized = (0..8)
+    private fun serializeItems(inventory: PlayerInventory): List<ByteArray> {
+        return (0..8)
             .map { i -> inventory.getItem(i) }
             .plus(inventory.itemInOffHand)
             .map { item -> if (item == null || item.type == Material.AIR) byteArrayOf() else item.serializeAsBytes() }
-
-        wandMeta.persistentDataContainer.set(inventoryTag, inventoryType, serialized)
-        wand.itemMeta = wandMeta
-        return wand
     }
 
-    private fun deserializeItems(wand: ItemStack): List<ItemStack?> {
-        return wand.persistentDataContainer.get(inventoryTag, inventoryType)!!.map { data ->
-            if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
+    private fun deserializeItems(bytes: List<ByteArray>): List<ItemStack?> {
+        return bytes.map {
+            data -> if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
         }
     }
 
@@ -142,10 +103,10 @@ object BoundaryManager : Listener {
         return Location(world, buffer.getDouble(), buffer.getDouble(), buffer.getDouble())
     }
 
-    private fun isSelected(wand: ItemStack, location: Location): Boolean {
-        val locations = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType)
+    private fun isSelected(player: Player, location: Location): Boolean {
+        val locations = player.persistentDataContainer.get(blocksTag, blocksType) ?: return false
         val serialized = serializeLocation(location)
-        return locations != null && locations.any { bytes -> bytes.contentEquals(serialized) }
+        return locations.any { bytes -> bytes.contentEquals(serialized) }
     }
 
     private fun selectGuide(player: Player, location: Location) {
@@ -176,8 +137,8 @@ object BoundaryManager : Listener {
         player.sendBlockChanges(changes)
     }
 
-    private fun resetGuides(player: Player, wand: ItemStack) {
-        val chunks = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType)
+    private fun resetGuides(player: Player) {
+        val chunks = player.persistentDataContainer.get(blocksTag, blocksType)
         if (chunks != null) {
             for (location in chunks)
                 deselectGuide(player, deserializeLocation(location))
@@ -188,39 +149,66 @@ object BoundaryManager : Listener {
         if (isTracked(player))
             return false
 
-        val wand = serializeItems(player.inventory)
-        (0..8).forEach { i -> player.inventory.setItem(i, null) }
-        player.inventory.setItemInOffHand(null)
+        player.persistentDataContainer.remove(blocksTag)
+        trackPlayer(player)
+
+        val wand = ItemStack.of(Material.BOOK)
+        val wandMeta = wand.itemMeta
+
+        wandMeta.displayName(
+            Component
+                .text("Boundary editor")
+                .decorate(TextDecoration.BOLD)
+                .color(NamedTextColor.LIGHT_PURPLE)
+        )
+
+        wandMeta.lore(
+            listOf(
+                Component
+                    .text("Select the boundary you want to edit or an")
+                    .color(NamedTextColor.WHITE),
+                Component
+                    .text("unclaimed territory you want to occupy")
+                    .color(NamedTextColor.WHITE),
+                Component.text(""),
+                Component
+                    .text("Selected chunks: 0")
+                    .color(NamedTextColor.GOLD),
+                Component.text(""),
+                Component
+                    .text("Drop this item to quit boundary mode")
+                    .color(NamedTextColor.LIGHT_PURPLE)
+            ),
+        )
+
+        wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
+        wandMeta.addItemFlags(ItemFlag.HIDE_DESTROYS, ItemFlag.HIDE_ENCHANTS)
+        wand.itemMeta = wandMeta
+
         player.inventory.setItemInMainHand(wand)
 
-        trackPlayer(player)
+        spawnActionBar(player)
         return true
     }
 
     private fun quitBoundaryMode(player: Player) {
-        val wand = findWand(player)
-        quitBoundaryMode(player, wand)
-    }
+        resetGuides(player)
 
-    private fun quitBoundaryMode(player: Player, wand: ItemStack) {
-        resetGuides(player, wand)
-
-        val items = deserializeItems(wand)
+        val serialized = player.persistentDataContainer.get(inventoryTag, inventoryType)!!
+        val items = deserializeItems(serialized)
         items.slice(0..8).zip((0..8)).forEach { (item, slot) ->
             player.inventory.setItem(slot, item)
         }
         player.inventory.setItemInOffHand(items.last())
+
         untrackPlayer(player)
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
-        if (isTracked(player) && isWand(event.item)) {
-            val wand = event.item!!
-            val wandMeta = wand.itemMeta
-
-            val list = wandMeta.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
+        if (isTracked(player)) {
+            val list = player.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
             var size = list.size
 
             if (event.action.isRightClick) {
@@ -239,52 +227,34 @@ object BoundaryManager : Listener {
                                 .decorate(TextDecoration.BOLD)
                         )
 
-                        val chunks = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType)
-                        if (chunks != null) {
-                            for (location in chunks)
-                                ChunkManager.changeOwner(deserializeLocation(location), player.name)
-                        }
+                        for (location in list)
+                            ChunkManager.changeOwner(deserializeLocation(location), player.name)
                     }
 
-                    quitBoundaryMode(player, wand)
+                    quitBoundaryMode(player)
                 } else if (event.interactionPoint != null) {
                     val chunk = event.interactionPoint!!.chunk
                     val center = chunk.getBlock(8, 0, 8).location
                     val serialized = serializeLocation(center)
 
-                    if (isSelected(wand, center)) {
+                    if (isSelected(player, center)) {
                         Bukkit.getLogger().info("${player.name} deselected $center")
                         deselectGuide(player, center)
-                        wandMeta.persistentDataContainer.set(blocksTag, blocksType,
+                        player.persistentDataContainer.set(blocksTag, blocksType,
                             list.filterNot { bytes -> bytes.contentEquals(serialized) } )
                         size--
                     } else {
                         Bukkit.getLogger().info("${player.name} selected $center")
                         selectGuide(player, center)
-                        wandMeta.persistentDataContainer.set(blocksTag, blocksType,
+                        player.persistentDataContainer.set(blocksTag, blocksType,
                             list.plusElement(serialized))
                         size++
                     }
-
-                    val lore = wandMeta.lore()!!
-                    lore[3] = Component
-                        .text("Selected chunks: $size")
-                        .color(NamedTextColor.GOLD)
-                    wandMeta.lore(lore)
-
-                    // NOTE: Reapply itemMeta!!!
-                    wand.itemMeta = wandMeta
                 }
             }
 
             event.isCancelled = true
         }
-    }
-
-    @EventHandler
-    fun onPickup(event: EntityPickupItemEvent) {
-        if (isWand(event.item.itemStack))
-            event.item.remove()
     }
 
     @EventHandler
@@ -316,8 +286,8 @@ object BoundaryManager : Listener {
     fun onDrop(event: PlayerDropItemEvent) {
         val player = event.player
         if (isTracked(player)) {
-            quitBoundaryMode(player, event.itemDrop.itemStack)
-            event.itemDrop.remove()
+            quitBoundaryMode(player)
+            //event.itemDrop.remove()
         }
     }
 
@@ -325,16 +295,12 @@ object BoundaryManager : Listener {
     fun onDeath(event: PlayerDeathEvent) {
         val player = event.player
         if (isTracked(player)) {
-            val predicate = { item: ItemStack -> isWand(item) }
-            val wand = event.drops.find(predicate)
-            event.drops.removeIf(predicate)
+            resetGuides(player)
 
-            if (wand != null) {
-                resetGuides(player, wand)
+            val serialized = player.persistentDataContainer.get(inventoryTag, inventoryType)!!
+            val items = deserializeItems(serialized)
+            event.drops.addAll(items)
 
-                val items = deserializeItems(wand)
-                event.drops.addAll(items)
-            }
             untrackPlayer(player)
         }
     }
@@ -343,8 +309,7 @@ object BoundaryManager : Listener {
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
         if (isTracked(player)) {
-            val wand = findWand(player)
-            val chunks = wand.itemMeta.persistentDataContainer.get(blocksTag, blocksType) ?: return
+            val chunks = player.persistentDataContainer.get(blocksTag, blocksType) ?: return
 
             class ShowGuides : Runnable {
                 override fun run() {
@@ -352,7 +317,8 @@ object BoundaryManager : Listener {
                         selectGuide(player, deserializeLocation(location))
                 }
             }
-            Bukkit.getServer().scheduler.runTaskLaterAsynchronously(plugin, ShowGuides(), 20L)
+            Bukkit.getServer().scheduler.runTaskLater(plugin, ShowGuides(), 20L)
+            spawnActionBar(player)
         }
     }
 }
