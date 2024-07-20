@@ -1,5 +1,12 @@
 package me.bynect.boundaries
 
+import me.bynect.boundaries.ChunkManager.deselectChunk
+import me.bynect.boundaries.ChunkManager.deserializeLocation
+import me.bynect.boundaries.ChunkManager.getOwner
+import me.bynect.boundaries.ChunkManager.getSelector
+import me.bynect.boundaries.ChunkManager.isOwned
+import me.bynect.boundaries.ChunkManager.selectChunk
+import me.bynect.boundaries.ChunkManager.serializeLocation
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.ComponentBuilder
 import net.kyori.adventure.text.TextComponent
@@ -24,8 +31,6 @@ import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
-import org.bukkit.scheduler.BukkitRunnable
-import java.nio.ByteBuffer
 
 object BoundaryManager : Listener {
 
@@ -38,25 +43,6 @@ object BoundaryManager : Listener {
     // This tag is used to store the serialized chunk locations with guides
     val blocksTag = NamespacedKey(plugin, "guideBlocks")
     val blocksType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
-
-    private fun spawnActionBar(player: Player) {
-        class ShowMode : BukkitRunnable() {
-            override fun run() {
-                if (player.persistentDataContainer.has(inventoryTag)) {
-                    player.sendActionBar(
-                        Component
-                            .text("Boundary editor mode")
-                            .color(NamedTextColor.GOLD)
-                            .decorate(TextDecoration.ITALIC)
-                    )
-                } else {
-                    player.sendActionBar(Component.text(""))
-                    cancel()
-                }
-            }
-        }
-        ShowMode().runTaskTimer(plugin, 0L, 20L)
-    }
 
     private fun isTracked(player: Player): Boolean {
         return player.persistentDataContainer.has(inventoryTag, inventoryType)
@@ -89,21 +75,6 @@ object BoundaryManager : Listener {
         return bytes.map {
             data -> if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
         }
-    }
-
-    private fun serializeLocation(location: Location): ByteArray {
-        return ByteBuffer.allocate(Double.SIZE_BYTES * 3 + location.world.name.length)
-            .putDouble(location.x)
-            .putDouble(location.y)
-            .putDouble(location.z)
-            .put(location.world.name.toByteArray())
-            .array()
-    }
-
-    private fun deserializeLocation(array: ByteArray): Location {
-        val world = Bukkit.getWorld(String(array, Double.SIZE_BYTES * 3, array.size - Double.SIZE_BYTES * 3))
-        val buffer = ByteBuffer.wrap(array)
-        return Location(world, buffer.getDouble(), buffer.getDouble(), buffer.getDouble())
     }
 
     private fun isSelected(player: Player, location: Location): Boolean {
@@ -189,8 +160,6 @@ object BoundaryManager : Listener {
         wand.itemMeta = wandMeta
 
         player.inventory.setItemInMainHand(wand)
-
-        spawnActionBar(player)
         return true
     }
 
@@ -210,7 +179,7 @@ object BoundaryManager : Listener {
     @EventHandler(ignoreCancelled = true)
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
-        if (isTracked(player) && event.hand == EquipmentSlot.HAND) {
+        if (isTracked(player)) {
             val list = player.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
             var size = list.size
 
@@ -235,23 +204,54 @@ object BoundaryManager : Listener {
                     }
 
                     quitBoundaryMode(player)
-                } else {
+                } else if (event.hand == EquipmentSlot.HAND) {
                     val chunk = event.interactionPoint?.chunk ?: player.chunk
                     val center = chunk.getBlock(8, 0, 8).location
                     val serialized = serializeLocation(center)
 
-                    if (isSelected(player, center)) {
-                        Bukkit.getLogger().info("${player.name} deselected $center")
-                        deselectGuide(player, center)
-                        player.persistentDataContainer.set(blocksTag, blocksType,
-                            list.filterNot { bytes -> bytes.contentEquals(serialized) } )
-                        size--
+                    val owner = getOwner(center)
+                    val selector = getSelector(center)
+
+                    if (owner != null && owner != player.name) {
+                        player.sendActionBar(
+                            Component
+                                .text("Chunk is already owned by ")
+                                .color(NamedTextColor.DARK_RED)
+                                .decorate(TextDecoration.BOLD)
+                                .append(
+                                    Component
+                                        .text(owner)
+                                        .color(NamedTextColor.RED)
+                                )
+                        )
+                    } else if (selector != null && selector != player.name) {
+                        player.sendActionBar(
+                            Component
+                                .text("Chunk is already selected by ")
+                                .color(NamedTextColor.DARK_RED)
+                                .decorate(TextDecoration.BOLD)
+                                .append(
+                                    Component
+                                        .text(selector)
+                                        .color(NamedTextColor.RED)
+                                )
+                        )
                     } else {
-                        Bukkit.getLogger().info("${player.name} selected $center")
-                        selectGuide(player, center)
-                        player.persistentDataContainer.set(blocksTag, blocksType,
-                            list.plusElement(serialized))
-                        size++
+                        if (isSelected(player, center)) {
+                            Bukkit.getLogger().info("${player.name} deselected $center")
+                            deselectGuide(player, center)
+                            player.persistentDataContainer.set(blocksTag, blocksType,
+                                list.filterNot { bytes -> bytes.contentEquals(serialized) } )
+                            size--
+                            deselectChunk(player, center)
+                        } else {
+                            Bukkit.getLogger().info("${player.name} selected $center")
+                            selectGuide(player, center)
+                            player.persistentDataContainer.set(blocksTag, blocksType,
+                                list.plusElement(serialized))
+                            size++
+                            selectChunk(player, center)
+                        }
                     }
                 }
             }
@@ -303,6 +303,7 @@ object BoundaryManager : Listener {
             val serialized = player.persistentDataContainer.get(inventoryTag, inventoryType)!!
             val items = deserializeItems(serialized)
             event.drops.addAll(items)
+            event.drops.remove(player.inventory.itemInMainHand)
 
             untrackPlayer(player)
         }
@@ -321,7 +322,6 @@ object BoundaryManager : Listener {
                 }
             }
             Bukkit.getServer().scheduler.runTaskLater(plugin, ShowGuides(), 20L)
-            spawnActionBar(player)
         }
     }
 }
