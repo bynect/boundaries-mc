@@ -8,6 +8,7 @@ import me.bynect.boundaries.ChunkManager.deselectGuide
 import me.bynect.boundaries.ChunkManager.deserializeLocation
 import me.bynect.boundaries.ChunkManager.getOwner
 import me.bynect.boundaries.ChunkManager.getSelector
+import me.bynect.boundaries.ChunkManager.isSelectedBy
 import me.bynect.boundaries.ChunkManager.selectChunk
 import me.bynect.boundaries.ChunkManager.selectGuide
 import me.bynect.boundaries.ChunkManager.serializeLocation
@@ -69,12 +70,6 @@ object BoundaryManager : Listener {
         }
     }
 
-    private fun isSelected(player: Player, location: Location): Boolean {
-        val locations = player.persistentDataContainer.get(chunksTag, chunksType) ?: return false
-        val serialized = serializeLocation(location)
-        return locations.any { bytes -> bytes.contentEquals(serialized) }
-    }
-
     fun enterBoundaryMode(player: Player): Boolean {
         if (isTracked(player))
             return false
@@ -129,12 +124,12 @@ object BoundaryManager : Listener {
         untrackPlayer(player)
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
         if (isTracked(player)) {
             val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
-            var size = list.size
+            val size = list.size
 
             if (event.action.isRightClick) {
                 if (player.isSneaking) {
@@ -190,7 +185,7 @@ object BoundaryManager : Listener {
                                 )
                         )
                     } else {
-                        if (isSelected(player, center)) {
+                        if (isSelectedBy(player, center)) {
                             Bukkit.getLogger().info("${player.name} deselected $center")
                             player.persistentDataContainer.set(chunksTag, chunksType,
                                 list.filterNot { bytes -> bytes.contentEquals(serialized) })
