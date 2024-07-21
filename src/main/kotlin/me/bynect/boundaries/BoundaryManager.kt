@@ -14,12 +14,9 @@ import me.bynect.boundaries.ChunkManager.selectGuide
 import me.bynect.boundaries.ChunkManager.serializeLocation
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
-import net.kyori.adventure.text.format.TextColor
 import net.kyori.adventure.text.format.TextDecoration
-import org.bukkit.Bukkit
-import org.bukkit.Location
-import org.bukkit.Material
-import org.bukkit.NamespacedKey
+import org.bukkit.*
+import net.kyori.adventure.sound.Sound
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -36,7 +33,6 @@ import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
-
 
 object BoundaryManager : Listener {
 
@@ -98,23 +94,27 @@ object BoundaryManager : Listener {
                     .text("edit or an unclaimed territory")
                     .color(NamedTextColor.WHITE),
                 Component
-                    .text("with")
+                    .text("with ")
                     .color(NamedTextColor.WHITE)
                     .append(
                         Component
                             .text("left click")
-                            .color(NamedTextColor.LIGHT_PURPLE)
+                            .color(NamedTextColor.GOLD)
                     ),
                 Component.text(""),
                 Component
-                    .text("Open boundary editor options with"),
+                    .text("Open boundary editor options with")
+                    .color(NamedTextColor.WHITE),
                 Component
                     .text("right click")
-                    .color(NamedTextColor.LIGHT_PURPLE),
+                    .color(NamedTextColor.GOLD),
                 Component.text(""),
                 Component
-                    .text("Drop this item or change slot to quit boundary mode")
-                    .color(NamedTextColor.LIGHT_PURPLE)
+                    .text("Drop this item or change slot to")
+                    .color(NamedTextColor.DARK_PURPLE),
+                Component
+                    .text("quit boundary mode")
+                    .color(NamedTextColor.DARK_PURPLE),
             ),
         )
 
@@ -167,9 +167,11 @@ object BoundaryManager : Listener {
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
         if (isTracked(player)) {
-            val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
-
             if (event.hand == EquipmentSlot.HAND) {
+                val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
+                val particle = player.location
+                particle.y += 1
+
                 if (event.action.isRightClick) {
                     boundaryMenu(player)
                 } else if (event.action.isLeftClick) {
@@ -181,6 +183,9 @@ object BoundaryManager : Listener {
                     val selector = getSelector(center)
 
                     if (owner != null && owner != player.name) {
+                        player.spawnParticle(Particle.SMOKE, particle, 5)
+                        player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_SHULKER_TELEPORT, Sound.Source.PLAYER, 1f, 1f))
+
                         player.sendActionBar(
                             Component
                                 .text("Chunk is already owned by ")
@@ -193,6 +198,9 @@ object BoundaryManager : Listener {
                                 )
                         )
                     } else if (selector != null && selector != player.name) {
+                        player.spawnParticle(Particle.SMOKE, particle, 5)
+                        player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_SHULKER_TELEPORT, Sound.Source.PLAYER, 1f, 1f))
+
                         player.sendActionBar(
                             Component
                                 .text("Chunk is already selected by ")
@@ -207,6 +215,9 @@ object BoundaryManager : Listener {
                     } else {
                         if (isSelectedBy(center, player)) {
                             Bukkit.getLogger().info("${player.name} deselected $center")
+
+                            player.spawnParticle(Particle.FIREWORK, particle, 10)
+
                             player.persistentDataContainer.set(chunksTag, chunksType,
                                 list.filterNot { bytes -> bytes.contentEquals(serialized) })
 
@@ -214,6 +225,9 @@ object BoundaryManager : Listener {
                             deselectGuide(player, center)
                         } else {
                             Bukkit.getLogger().info("${player.name} selected $center")
+
+                            player.spawnParticle(Particle.HAPPY_VILLAGER, particle, 10)
+
                             player.persistentDataContainer.set(
                                 chunksTag, chunksType,
                                 list.plusElement(serialized)
