@@ -1,19 +1,25 @@
 package me.bynect.boundaries
 
+import me.bynect.boundaries.BoundaryManager.chunksTag
+import me.bynect.boundaries.BoundaryManager.chunksType
+import me.bynect.boundaries.BoundaryManager.isTracked
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
-import org.bukkit.GameMode
 import org.bukkit.Location
+import org.bukkit.Material
 import org.bukkit.NamespacedKey
+import org.bukkit.block.BlockState
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockBreakEvent
+import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.persistence.PersistentDataType
 import java.nio.ByteBuffer
+
 
 object ChunkManager : Listener {
 
@@ -24,7 +30,7 @@ object ChunkManager : Listener {
     val ownerType = PersistentDataType.STRING
 
     // This tag is used to store the player who selected this chunk
-    val selectTag = NamespacedKey(plugin, "selectPlayer")
+    val selectTag = NamespacedKey(plugin, "boundarySelector")
     val selectType = PersistentDataType.STRING
 
     fun serializeLocation(location: Location): ByteArray {
@@ -77,46 +83,120 @@ object ChunkManager : Listener {
         pdc.set(selectTag, selectType, player.name)
     }
 
-    fun deselectChunk(player: Player, location: Location) {
+    fun deselectChunk(location: Location) {
         val pdc = location.chunk.persistentDataContainer
         assert(pdc.has(selectTag))
         pdc.remove(selectTag)
     }
 
-    @EventHandler
-    fun onMove(event: PlayerMoveEvent) {
-        val diffX = event.to.x != event.from.x
-        val diffZ = event.to.z != event.from.z
-
-        if (diffZ || diffX) {
-            val chunk = event.to.chunk
-            val owner = chunk.persistentDataContainer.get(ownerTag, ownerType)
-            if (owner != null) {
-                event.player.sendActionBar(
-                    Component
-                        .text("Chunk owned by ")
-                        .color(NamedTextColor.WHITE)
-                        .decorate(TextDecoration.ITALIC)
-                        .append(
-                            Component
-                                .text(owner)
-                                .color(NamedTextColor.LIGHT_PURPLE)
-                                .decorate(TextDecoration.BOLD)
-                        )
-                )
-            } else {
-                event.player.sendActionBar(Component.text(""))
+    fun addGuide(changes: MutableList<BlockState>, location: Location) {
+        for (x in (0..1)) {
+            for (z in (0..1)) {
+                for (y in (-64..320)) {
+                    val state = location.chunk.getBlock(x * 15, y, z * 15).state
+                    state.type = Material.YELLOW_CONCRETE
+                    changes.add(state)
+                }
             }
+        }
+    }
 
-            if ((owner == null || event.player.name == owner) && event.player.gameMode == GameMode.ADVENTURE)
-                event.player.gameMode = GameMode.SURVIVAL
-            else if (event.player.gameMode == GameMode.SURVIVAL)
-                event.player.gameMode = GameMode.ADVENTURE
+    fun removeGuide(changes: MutableList<BlockState>, location: Location) {
+        for (x in (0..1)) {
+            for (z in (0..1)) {
+                for (y in (-64..320)) {
+                    val state = location.chunk.getBlock(x * 15, y, z * 15).state
+                    state.update(true)
+                    changes.add(state)
+                }
+            }
+        }
+    }
+
+    fun selectGuide(player: Player, location: Location) {
+        val changes: MutableList<BlockState> = mutableListOf()
+        addGuide(changes, location)
+        player.sendBlockChanges(changes)
+    }
+
+    fun deselectGuide(player: Player, location: Location) {
+        val changes: MutableList<BlockState> = mutableListOf()
+        removeGuide(changes, location)
+        player.sendBlockChanges(changes)
+    }
+
+    fun deselectAllChunks(player: Player) {
+        val chunks = player.persistentDataContainer.get(chunksTag, chunksType) ?: return
+        val changes: MutableList<BlockState> = mutableListOf()
+
+        for (serialized in chunks) {
+            val location = deserializeLocation(serialized)
+            removeGuide(changes, location)
+            deselectChunk(location)
+        }
+
+        player.sendBlockChanges(changes)
+    }
+
+    private fun updateChunkGuides(player: Player) {
+        val radius = 10
+        val changes: MutableList<BlockState> = mutableListOf()
+
+        var x: Int = -16 * radius
+        while (x <= 16 * radius) {
+            var z: Int = -16 * radius
+            while (z <= 16 * radius) {
+                val block = player.location.block.getRelative(x, 0, z)
+                if (isSelectedBy(player, block.location)) {
+                    addGuide(changes, block.location)
+                }
+
+                z += 16
+            }
+            x += 16
+        }
+
+        player.sendBlockChanges(changes)
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    fun onMove(event: PlayerMoveEvent) {
+        val chunk = event.to.chunk
+        if (chunk != event.from.chunk) {
+            if (isTracked(event.player)) {
+                updateChunkGuides(event.player)
+            } else {
+                val owner = chunk.persistentDataContainer.get(ownerTag, ownerType)
+                if (owner != null) {
+                    event.player.sendActionBar(
+                        Component
+                            .text("Chunk owned by ")
+                            .color(NamedTextColor.WHITE)
+                            .decorate(TextDecoration.ITALIC)
+                            .append(
+                                Component
+                                    .text(owner)
+                                    .color(NamedTextColor.LIGHT_PURPLE)
+                                    .decorate(TextDecoration.BOLD)
+                            )
+                    )
+                } else {
+                    event.player.sendActionBar(Component.text(""))
+                }
+            }
         }
     }
 
     @EventHandler
     fun onBlockBreak(event: BlockBreakEvent) {
         // TODO Block explosions, pvp, etc
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    fun onPlayerJoin(event: PlayerJoinEvent) {
+        val player = event.player
+        if (isTracked(player)) {
+            updateChunkGuides(player)
+        }
     }
 }

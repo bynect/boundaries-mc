@@ -1,36 +1,40 @@
+@file:Suppress("UnstableApiUsage")
+
 package me.bynect.boundaries
 
+import me.bynect.boundaries.ChunkManager.deselectAllChunks
 import me.bynect.boundaries.ChunkManager.deselectChunk
+import me.bynect.boundaries.ChunkManager.deselectGuide
 import me.bynect.boundaries.ChunkManager.deserializeLocation
 import me.bynect.boundaries.ChunkManager.getOwner
 import me.bynect.boundaries.ChunkManager.getSelector
-import me.bynect.boundaries.ChunkManager.isOwned
 import me.bynect.boundaries.ChunkManager.selectChunk
+import me.bynect.boundaries.ChunkManager.selectGuide
 import me.bynect.boundaries.ChunkManager.serializeLocation
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.ComponentBuilder
-import net.kyori.adventure.text.TextComponent
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
-import org.bukkit.block.BlockState
 import org.bukkit.enchantments.Enchantment
-import org.bukkit.entity.Item
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
-import org.bukkit.event.entity.EntityPickupItemEvent
+import org.bukkit.event.block.BlockDamageEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.inventory.InventoryClickEvent
-import org.bukkit.event.player.*
+import org.bukkit.event.player.PlayerDropItemEvent
+import org.bukkit.event.player.PlayerInteractEvent
+import org.bukkit.event.player.PlayerItemHeldEvent
+import org.bukkit.event.player.PlayerSwapHandItemsEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
+
 
 object BoundaryManager : Listener {
 
@@ -40,93 +44,46 @@ object BoundaryManager : Listener {
     val inventoryTag = NamespacedKey(plugin, "savedInventory")
     val inventoryType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
 
-    // This tag is used to store the serialized chunk locations with guides
-    val blocksTag = NamespacedKey(plugin, "guideBlocks")
-    val blocksType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
+    // This tag is used to store the serialized locations of the selected chunks
+    val chunksTag = NamespacedKey(plugin, "selectChunks")
+    val chunksType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BYTE_ARRAY)
 
-    private fun isTracked(player: Player): Boolean {
+    fun isTracked(player: Player): Boolean {
         return player.persistentDataContainer.has(inventoryTag, inventoryType)
-    }
-
-    private fun trackPlayer(player: Player) {
-        val items = serializeItems(player.inventory)
-        player.persistentDataContainer.set(inventoryTag, inventoryType, items)
-
-        (0..8).forEach { i -> player.inventory.setItem(i, null) }
-        player.inventory.setItemInOffHand(null)
-
-        Bukkit.getLogger().info("Track boundary mode " + player.name)
     }
 
     private fun untrackPlayer(player: Player) {
         player.persistentDataContainer.remove(inventoryTag)
-        player.persistentDataContainer.remove(blocksTag)
+        player.persistentDataContainer.remove(chunksTag)
         Bukkit.getLogger().info("Untrack boundary mode " + player.name)
     }
 
     private fun serializeItems(inventory: PlayerInventory): List<ByteArray> {
-        return (0..8)
-            .map { i -> inventory.getItem(i) }
-            .plus(inventory.itemInOffHand)
-            .map { item -> if (item == null || item.type == Material.AIR) byteArrayOf() else item.serializeAsBytes() }
+        return listOf(inventory.itemInMainHand, inventory.itemInOffHand)
+            .map { item -> if (item.type == Material.AIR) byteArrayOf() else item.serializeAsBytes() }
     }
 
     private fun deserializeItems(bytes: List<ByteArray>): List<ItemStack?> {
-        return bytes.map {
-            data -> if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
+        return bytes.map { data ->
+            if (data.isNotEmpty()) ItemStack.deserializeBytes(data) else null
         }
     }
 
     private fun isSelected(player: Player, location: Location): Boolean {
-        val locations = player.persistentDataContainer.get(blocksTag, blocksType) ?: return false
+        val locations = player.persistentDataContainer.get(chunksTag, chunksType) ?: return false
         val serialized = serializeLocation(location)
         return locations.any { bytes -> bytes.contentEquals(serialized) }
-    }
-
-    private fun selectGuide(player: Player, location: Location) {
-        val changes: MutableList<BlockState> = mutableListOf()
-        for (x in (0..1)) {
-            for (z in (0..1)) {
-                for (y in (-64..320)) {
-                    val state = location.chunk.getBlock(x * 15, y, z * 15).state
-                    state.type = Material.YELLOW_CONCRETE
-                    changes.add(state)
-                }
-            }
-        }
-        player.sendBlockChanges(changes)
-    }
-
-    private fun deselectGuide(player: Player, location: Location) {
-        val changes: MutableList<BlockState> = mutableListOf()
-        for (x in (0..1)) {
-            for (z in (0..1)) {
-                for (y in (-64..320)) {
-                    val state = location.chunk.getBlock(x * 15, y, z * 15).state
-                    state.update(true)
-                    changes.add(state)
-                }
-            }
-        }
-        player.sendBlockChanges(changes)
-    }
-
-    private fun resetGuides(player: Player) {
-        val chunks = player.persistentDataContainer.get(blocksTag, blocksType)
-        if (chunks != null) {
-            for (location in chunks)
-                deselectGuide(player, deserializeLocation(location))
-        }
     }
 
     fun enterBoundaryMode(player: Player): Boolean {
         if (isTracked(player))
             return false
 
-        player.persistentDataContainer.remove(blocksTag)
-        trackPlayer(player)
+        player.persistentDataContainer.remove(chunksTag)
+        val items = serializeItems(player.inventory)
+        player.persistentDataContainer.set(inventoryTag, inventoryType, items)
 
-        val wand = ItemStack.of(Material.BOOK)
+        val wand = ItemStack.of(Material.BREEZE_ROD)
         val wandMeta = wand.itemMeta
 
         wandMeta.displayName(
@@ -146,33 +103,29 @@ object BoundaryManager : Listener {
                     .color(NamedTextColor.WHITE),
                 Component.text(""),
                 Component
-                    .text("Selected chunks: 0")
-                    .color(NamedTextColor.GOLD),
-                Component.text(""),
-                Component
-                    .text("Drop this item to quit boundary mode")
+                    .text("Drop this item or change slot to quit boundary mode")
                     .color(NamedTextColor.LIGHT_PURPLE)
             ),
         )
 
-        //wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
+        wandMeta.addEnchant(Enchantment.INFINITY, 1, true)
         wandMeta.addItemFlags(ItemFlag.HIDE_DESTROYS, ItemFlag.HIDE_ENCHANTS)
         wand.itemMeta = wandMeta
 
         player.inventory.setItemInMainHand(wand)
+        player.inventory.setItemInOffHand(null)
+
+        Bukkit.getLogger().info("Track boundary mode " + player.name)
         return true
     }
 
     private fun quitBoundaryMode(player: Player) {
-        resetGuides(player)
-
         val serialized = player.persistentDataContainer.get(inventoryTag, inventoryType)!!
         val items = deserializeItems(serialized)
-        items.slice(0..8).zip((0..8)).forEach { (item, slot) ->
-            player.inventory.setItem(slot, item)
-        }
-        player.inventory.setItemInOffHand(items.last())
+        player.inventory.setItemInMainHand(items[0])
+        player.inventory.setItemInOffHand(items[1])
 
+        deselectAllChunks(player)
         untrackPlayer(player)
     }
 
@@ -180,7 +133,7 @@ object BoundaryManager : Listener {
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
         if (isTracked(player)) {
-            val list = player.persistentDataContainer.get(blocksTag, blocksType) ?: listOf()
+            val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
             var size = list.size
 
             if (event.action.isRightClick) {
@@ -216,41 +169,43 @@ object BoundaryManager : Listener {
                         player.sendActionBar(
                             Component
                                 .text("Chunk is already owned by ")
-                                .color(NamedTextColor.DARK_RED)
-                                .decorate(TextDecoration.BOLD)
+                                .color(NamedTextColor.RED)
                                 .append(
                                     Component
                                         .text(owner)
-                                        .color(NamedTextColor.RED)
+                                        .color(NamedTextColor.WHITE)
+                                        .decorate(TextDecoration.BOLD)
                                 )
                         )
                     } else if (selector != null && selector != player.name) {
                         player.sendActionBar(
                             Component
                                 .text("Chunk is already selected by ")
-                                .color(NamedTextColor.DARK_RED)
-                                .decorate(TextDecoration.BOLD)
+                                .color(NamedTextColor.RED)
                                 .append(
                                     Component
                                         .text(selector)
-                                        .color(NamedTextColor.RED)
+                                        .color(NamedTextColor.WHITE)
+                                        .decorate(TextDecoration.BOLD)
                                 )
                         )
                     } else {
                         if (isSelected(player, center)) {
                             Bukkit.getLogger().info("${player.name} deselected $center")
+                            player.persistentDataContainer.set(chunksTag, chunksType,
+                                list.filterNot { bytes -> bytes.contentEquals(serialized) })
+
+                            deselectChunk(center)
                             deselectGuide(player, center)
-                            player.persistentDataContainer.set(blocksTag, blocksType,
-                                list.filterNot { bytes -> bytes.contentEquals(serialized) } )
-                            size--
-                            deselectChunk(player, center)
                         } else {
                             Bukkit.getLogger().info("${player.name} selected $center")
-                            selectGuide(player, center)
-                            player.persistentDataContainer.set(blocksTag, blocksType,
-                                list.plusElement(serialized))
-                            size++
+                            player.persistentDataContainer.set(
+                                chunksTag, chunksType,
+                                list.plusElement(serialized)
+                            )
+
                             selectChunk(player, center)
+                            selectGuide(player, center)
                         }
                     }
                 }
@@ -260,7 +215,14 @@ object BoundaryManager : Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
+    fun onBlockDamage(event: BlockDamageEvent) {
+        val player = event.player
+        if (isTracked(player))
+            event.isCancelled = true
+    }
+
+    @EventHandler(ignoreCancelled = true)
     fun onItemHeld(event: PlayerItemHeldEvent) {
         val player = event.player
         if (isTracked(player)) {
@@ -269,14 +231,14 @@ object BoundaryManager : Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     fun onInventoryClick(event: InventoryClickEvent) {
         val player = Bukkit.getPlayer(event.whoClicked.name)!!
         if (isTracked(player))
             quitBoundaryMode(player)
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     fun onSwapHand(event: PlayerSwapHandItemsEvent) {
         val player = event.player
         if (isTracked(player)) {
@@ -285,7 +247,7 @@ object BoundaryManager : Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     fun onDrop(event: PlayerDropItemEvent) {
         val player = event.player
         if (isTracked(player)) {
@@ -294,34 +256,17 @@ object BoundaryManager : Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     fun onDeath(event: PlayerDeathEvent) {
         val player = event.player
         if (isTracked(player)) {
-            resetGuides(player)
-
             val serialized = player.persistentDataContainer.get(inventoryTag, inventoryType)!!
             val items = deserializeItems(serialized)
             event.drops.addAll(items)
             event.drops.remove(player.inventory.itemInMainHand)
 
+            deselectAllChunks(player)
             untrackPlayer(player)
-        }
-    }
-
-    @EventHandler
-    fun onPlayerJoin(event: PlayerJoinEvent) {
-        val player = event.player
-        if (isTracked(player)) {
-            val chunks = player.persistentDataContainer.get(blocksTag, blocksType) ?: return
-
-            class ShowGuides : Runnable {
-                override fun run() {
-                    for (location in chunks)
-                        selectGuide(player, deserializeLocation(location))
-                }
-            }
-            Bukkit.getServer().scheduler.runTaskLater(plugin, ShowGuides(), 20L)
         }
     }
 }
