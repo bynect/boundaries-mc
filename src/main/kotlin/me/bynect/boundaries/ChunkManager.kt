@@ -29,9 +29,30 @@ object ChunkManager : Listener {
     val ownerTag = NamespacedKey(plugin, "boundaryOwner")
     val ownerType = PersistentDataType.STRING
 
-    // This tag is used to store the player who selected this chunk
+    // This tag is used to store the player who selected a chunk
     val selectTag = NamespacedKey(plugin, "boundarySelector")
     val selectType = PersistentDataType.STRING
+
+    // This tag is used to store the permission of a chunk
+    val permTag = NamespacedKey(plugin, "boundaryPermission")
+    val permType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BOOLEAN)
+
+    val permBreakBlock = 0
+
+    private fun defaultPerms(): MutableList<Boolean> {
+        return mutableListOf(false)
+    }
+
+    fun setPermission(location: Location, index: Int, value: Boolean) {
+        val perms = location.chunk.persistentDataContainer.get(permTag, permType) ?: defaultPerms()
+        perms[index] = value
+        location.chunk.persistentDataContainer.set(permTag, permType, perms)
+    }
+
+    fun getPermission(location: Location, index: Int): Boolean {
+        val perms = location.chunk.persistentDataContainer.get(permTag, permType) ?: defaultPerms()
+        return perms[index]
+    }
 
     fun serializeLocation(location: Location): ByteArray {
         return ByteBuffer.allocate(Double.SIZE_BYTES * 3 + location.world.name.length)
@@ -196,9 +217,15 @@ object ChunkManager : Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     fun onBlockBreak(event: BlockBreakEvent) {
-        // TODO Block explosions, pvp, etc
+        val owner = getOwner(event.block.location)
+        if (owner == null || owner == event.player.name)
+            return
+
+        val perms = event.block.chunk.persistentDataContainer.get(permTag , permType) ?: return
+        if (perms[permBreakBlock])
+            event.isCancelled = true
     }
 
     @EventHandler(ignoreCancelled = true)

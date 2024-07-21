@@ -9,6 +9,7 @@ import me.bynect.boundaries.ChunkManager.deserializeLocation
 import me.bynect.boundaries.ChunkManager.getOwner
 import me.bynect.boundaries.ChunkManager.getSelector
 import me.bynect.boundaries.ChunkManager.isSelectedBy
+import me.bynect.boundaries.ChunkManager.permBreakBlock
 import me.bynect.boundaries.ChunkManager.selectChunk
 import me.bynect.boundaries.ChunkManager.selectGuide
 import me.bynect.boundaries.ChunkManager.serializeLocation
@@ -24,6 +25,7 @@ import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockDamageEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.inventory.InventoryClickEvent
+import org.bukkit.event.inventory.InventoryDragEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerItemHeldEvent
@@ -138,10 +140,7 @@ object BoundaryManager : Listener {
     }
 
     private val menuInventory = run {
-        val title = Component
-            .text("Boundary mode menu")
-            .color(NamedTextColor.LIGHT_PURPLE)
-            .decorate(TextDecoration.BOLD)
+        val title = Component.text("Boundary mode menu")
         val inventory = Bukkit.createInventory(null, 27, title)
 
         val claim = ItemStack.of(Material.LIME_CONCRETE)
@@ -350,7 +349,17 @@ object BoundaryManager : Listener {
 
                     quitBoundaryMode(player)
                 } else if (item.type == Material.GRAY_CONCRETE) {
+                    // TODO: other perms
+                    for (serialized in list) {
+                        val location = deserializeLocation(serialized)
+                        if (!ChunkManager.isOwnedBy(location, player))
+                            continue
 
+                        val perm = ChunkManager.getPermission(location, permBreakBlock)
+                        ChunkManager.setPermission(location, permBreakBlock, perm.not())
+                    }
+
+                    quitBoundaryMode(player)
                 } else if (item.type == Material.WHITE_CONCRETE) {
                     deselectAllChunks(player)
                     player.sendActionBar(
@@ -363,6 +372,13 @@ object BoundaryManager : Listener {
             } else {
                 quitBoundaryMode(player)
             }
+        }
+    }
+
+    @EventHandler
+    fun onInventoryDrag(event: InventoryDragEvent) {
+        if (event.inventory.equals(menuInventory)) {
+            event.isCancelled = true
         }
     }
 
