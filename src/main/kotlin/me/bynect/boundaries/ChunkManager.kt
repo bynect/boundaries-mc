@@ -48,12 +48,15 @@ object ChunkManager : Listener {
         return Location(world, buffer.getDouble(), buffer.getDouble(), buffer.getDouble())
     }
 
-    fun changeOwner(location: Location, owner: String): Boolean {
+    fun changeOwner(location: Location, owner: String?): Boolean {
         val pdc = location.chunk.persistentDataContainer
-        if (pdc.has(ownerTag, ownerType))
-            return false
-
-        pdc.set(ownerTag, ownerType, owner)
+        if (owner == null) {
+            pdc.remove(ownerTag)
+        } else {
+            if (pdc.has(ownerTag, ownerType))
+                return false
+            pdc.set(ownerTag, ownerType, owner)
+        }
         return true
     }
 
