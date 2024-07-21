@@ -14,6 +14,7 @@ import me.bynect.boundaries.ChunkManager.selectGuide
 import me.bynect.boundaries.ChunkManager.serializeLocation
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.text.format.TextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Bukkit
 import org.bukkit.Location
@@ -91,11 +92,25 @@ object BoundaryManager : Listener {
         wandMeta.lore(
             listOf(
                 Component
-                    .text("Select the boundary you want to edit or an")
+                    .text("Select the boundary you want to")
                     .color(NamedTextColor.WHITE),
                 Component
-                    .text("unclaimed territory you want to occupy")
+                    .text("edit or an unclaimed territory")
                     .color(NamedTextColor.WHITE),
+                Component
+                    .text("with")
+                    .color(NamedTextColor.WHITE)
+                    .append(
+                        Component
+                            .text("left click")
+                            .color(NamedTextColor.LIGHT_PURPLE)
+                    ),
+                Component.text(""),
+                Component
+                    .text("Open boundary editor options with"),
+                Component
+                    .text("right click")
+                    .color(NamedTextColor.LIGHT_PURPLE),
                 Component.text(""),
                 Component
                     .text("Drop this item or change slot to quit boundary mode")
@@ -124,36 +139,41 @@ object BoundaryManager : Listener {
         untrackPlayer(player)
     }
 
+    private fun boundaryMenu(player: Player) {
+        val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
+
+        if (list.isEmpty()) {
+            player.sendActionBar(
+                Component
+                    .text("Nothing to claim")
+                    .color(NamedTextColor.RED)
+            )
+        } else {
+            player.sendActionBar(
+                Component
+                    .text("Claimed ${list.size} chunks")
+                    .color(NamedTextColor.GOLD)
+                    .decorate(TextDecoration.BOLD)
+            )
+
+            for (location in list)
+                ChunkManager.changeOwner(deserializeLocation(location), player.name)
+        }
+
+        quitBoundaryMode(player)
+    }
+
     @EventHandler
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
         if (isTracked(player)) {
             val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
-            val size = list.size
 
-            if (event.action.isRightClick) {
-                if (player.isSneaking) {
-                    if (size == 0) {
-                        player.sendActionBar(
-                            Component
-                                .text("Nothing to claim")
-                                .color(NamedTextColor.RED)
-                        )
-                    } else {
-                        player.sendActionBar(
-                            Component
-                                .text("Claiming $size chunks")
-                                .color(NamedTextColor.GOLD)
-                                .decorate(TextDecoration.BOLD)
-                        )
-
-                        for (location in list)
-                            ChunkManager.changeOwner(deserializeLocation(location), player.name)
-                    }
-
-                    quitBoundaryMode(player)
-                } else if (event.hand == EquipmentSlot.HAND) {
-                    val chunk = event.interactionPoint?.chunk ?: player.chunk
+            if (event.hand == EquipmentSlot.HAND) {
+                if (event.action.isRightClick) {
+                    boundaryMenu(player)
+                } else if (event.action.isLeftClick) {
+                    val chunk = event.clickedBlock?.chunk ?: player.chunk
                     val center = chunk.getBlock(8, 0, 8).location
                     val serialized = serializeLocation(center)
 
@@ -185,7 +205,7 @@ object BoundaryManager : Listener {
                                 )
                         )
                     } else {
-                        if (isSelectedBy(player, center)) {
+                        if (isSelectedBy(center, player)) {
                             Bukkit.getLogger().info("${player.name} deselected $center")
                             player.persistentDataContainer.set(chunksTag, chunksType,
                                 list.filterNot { bytes -> bytes.contentEquals(serialized) })

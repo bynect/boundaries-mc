@@ -57,12 +57,16 @@ object ChunkManager : Listener {
         return true
     }
 
-    fun isSelectedBy(player: Player, location: Location): Boolean {
+    fun isSelectedBy(location: Location, player: Player): Boolean {
         return getSelector(location) == player.name
     }
 
     fun isOwned(location: Location): Boolean {
         return getOwner(location) != null
+    }
+
+    fun isOwnedBy(location: Location, player: Player): Boolean {
+        return getOwner(location) == player.name
     }
 
     fun getOwner(location: Location): String? {
@@ -89,12 +93,14 @@ object ChunkManager : Listener {
         pdc.remove(selectTag)
     }
 
-    fun addGuide(changes: MutableList<BlockState>, location: Location) {
+    fun addGuide(player: Player, changes: MutableList<BlockState>, location: Location) {
+        val material = if (isOwnedBy(location, player)) Material.LIME_CONCRETE else Material.YELLOW_CONCRETE
+
         for (x in (0..1)) {
             for (z in (0..1)) {
                 for (y in (-64..320)) {
                     val state = location.chunk.getBlock(x * 15, y, z * 15).state
-                    state.type = Material.YELLOW_CONCRETE
+                    state.type = material
                     changes.add(state)
                 }
             }
@@ -115,7 +121,7 @@ object ChunkManager : Listener {
 
     fun selectGuide(player: Player, location: Location) {
         val changes: MutableList<BlockState> = mutableListOf()
-        addGuide(changes, location)
+        addGuide(player, changes, location)
         player.sendBlockChanges(changes)
     }
 
@@ -147,8 +153,8 @@ object ChunkManager : Listener {
             var z: Int = -16 * radius
             while (z <= 16 * radius) {
                 val block = player.location.block.getRelative(x, 0, z)
-                if (isSelectedBy(player, block.location)) {
-                    addGuide(changes, block.location)
+                if (isSelectedBy(block.location, player)) {
+                    addGuide(player, changes, block.location)
                 }
 
                 z += 16
