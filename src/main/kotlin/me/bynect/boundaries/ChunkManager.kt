@@ -15,8 +15,12 @@ import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockBreakEvent
+import org.bukkit.event.block.BlockPlaceEvent
+import org.bukkit.event.entity.EntityDamageByEntityEvent
+import org.bukkit.event.entity.EntityExplodeEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
+import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
 import java.nio.ByteBuffer
 
@@ -37,21 +41,32 @@ object ChunkManager : Listener {
     val permTag = NamespacedKey(plugin, "boundaryPermission")
     val permType = PersistentDataType.LIST.listTypeFrom(PersistentDataType.BOOLEAN)
 
-    val permBreakBlock = 0
-
-    private fun defaultPerms(): MutableList<Boolean> {
-        return mutableListOf(false)
+    enum class Permission(val index: Int) {
+        PERM_BREAK_BLOCK(0),
+        PERM_PLACE_BLOCK(1),
+        PERM_EXPLOSION(2),
+        PERM_PVP(3),
     }
 
-    fun setPermission(location: Location, index: Int, value: Boolean) {
-        val perms = location.chunk.persistentDataContainer.get(permTag, permType) ?: defaultPerms()
-        perms[index] = value
+    private fun defaultPerms(): List<Boolean> {
+        return listOf(true, true, true, true)
+    }
+
+    fun setPermission(location: Location, perm: Permission, value: Boolean) {
+        var perms = location.chunk.persistentDataContainer.get(permTag, permType) ?: defaultPerms()
+        perms = perms.toMutableList()
+
+        perms[perm.index] = value
         location.chunk.persistentDataContainer.set(permTag, permType, perms)
     }
 
-    fun getPermission(location: Location, index: Int): Boolean {
+    fun setPermissions(location: Location, perms: List<Boolean>) {
+        location.chunk.persistentDataContainer.set(permTag, permType, perms)
+    }
+
+    fun getPermission(location: Location, perm: Permission): Boolean {
         val perms = location.chunk.persistentDataContainer.get(permTag, permType) ?: defaultPerms()
-        return perms[index]
+        return perms[perm.index]
     }
 
     fun serializeLocation(location: Location): ByteArray {
@@ -223,9 +238,44 @@ object ChunkManager : Listener {
         if (owner == null || owner == event.player.name)
             return
 
-        val perms = event.block.chunk.persistentDataContainer.get(permTag , permType) ?: return
-        if (perms[permBreakBlock])
+        if (!getPermission(event.block.location, Permission.PERM_BREAK_BLOCK))
             event.isCancelled = true
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    fun onBlockPlace(event: BlockPlaceEvent) {
+        val owner = getOwner(event.block.location)
+        if (owner == null || owner == event.player.name)
+            return
+
+        if (!getPermission(event.block.location, Permission.PERM_PLACE_BLOCK)) {
+            event.isCancelled = true
+            val item = ItemStack(event.block.type)
+            event.player.inventory.addItem(item)
+            event.player.updateInventory()
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    fun onExplosion(event: EntityExplodeEvent) {
+        val iterator = event.blockList().iterator()
+        while (iterator.hasNext()) {
+            val block = iterator.next()
+            if (!getPermission(block.location, Permission.PERM_EXPLOSION)) {
+                iterator.remove()
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    fun onEntityDamage(event: EntityDamageByEntityEvent) {
+        if (event.damager is Player && event.entity is Player) {
+            if (!getPermission(event.damager.location, Permission.PERM_PVP)
+                || !getPermission(event.entity.location, Permission.PERM_PVP)
+            ) {
+                event.isCancelled = true
+            }
+        }
     }
 
     @EventHandler(ignoreCancelled = true)

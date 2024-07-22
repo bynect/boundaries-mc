@@ -9,7 +9,6 @@ import me.bynect.boundaries.ChunkManager.deserializeLocation
 import me.bynect.boundaries.ChunkManager.getOwner
 import me.bynect.boundaries.ChunkManager.getSelector
 import me.bynect.boundaries.ChunkManager.isSelectedBy
-import me.bynect.boundaries.ChunkManager.permBreakBlock
 import me.bynect.boundaries.ChunkManager.selectChunk
 import me.bynect.boundaries.ChunkManager.selectGuide
 import me.bynect.boundaries.ChunkManager.serializeLocation
@@ -17,7 +16,10 @@ import net.kyori.adventure.sound.Sound
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
-import org.bukkit.*
+import org.bukkit.Bukkit
+import org.bukkit.Material
+import org.bukkit.NamespacedKey
+import org.bukkit.Particle
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -30,7 +32,10 @@ import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerItemHeldEvent
 import org.bukkit.event.player.PlayerSwapHandItemsEvent
-import org.bukkit.inventory.*
+import org.bukkit.inventory.EquipmentSlot
+import org.bukkit.inventory.ItemFlag
+import org.bukkit.inventory.ItemStack
+import org.bukkit.inventory.PlayerInventory
 import org.bukkit.persistence.PersistentDataType
 
 
@@ -140,7 +145,7 @@ object BoundaryManager : Listener {
     }
 
     private val menuInventory = run {
-        val title = Component.text("Boundary mode menu")
+        val title = Component.text("Boundary menu")
         val inventory = Bukkit.createInventory(null, 27, title)
 
         val claim = ItemStack.of(Material.LIME_CONCRETE)
@@ -186,6 +191,65 @@ object BoundaryManager : Listener {
         inventory
     }
 
+    private val permInventory = run {
+        val title = Component.text("Permission menu")
+        val inventory = Bukkit.createInventory(null, 27, title)
+
+        val destroy = ItemStack.of(Material.NETHERITE_PICKAXE)
+        val destroyMeta = destroy.itemMeta
+
+        destroyMeta.displayName(Component.text("Block destruction"))
+        destroyMeta.lore(
+            listOf(
+                Component.text("Right click to allow block destruction"),
+                Component.text("Left click to disable block destruction")
+            ),
+        )
+        destroy.itemMeta = destroyMeta
+        inventory.setItem(10, destroy)
+
+        val place = ItemStack.of(Material.BRICKS)
+        val placeMeta = place.itemMeta
+
+        placeMeta.displayName(Component.text("Block placement"))
+        placeMeta.lore(
+            listOf(
+                Component.text("Right click to allow block placement"),
+                Component.text("Left click to disable block placement")
+            ),
+        )
+        place.itemMeta = placeMeta
+        inventory.setItem(12, place)
+
+        val tnt = ItemStack.of(Material.TNT)
+        val tntMeta = tnt.itemMeta
+
+        tntMeta.displayName(Component.text("Change permissions"))
+        tntMeta.lore(
+            listOf(
+                Component.text("Right click to allow explosions"),
+                Component.text("Left click to disable explosions")
+            ),
+        )
+        tnt.itemMeta = tntMeta
+        inventory.setItem(14, tnt)
+
+        val pvp = ItemStack.of(Material.IRON_SWORD)
+        val pvpMeta = pvp.itemMeta
+
+        pvpMeta.displayName(Component.text("Player combat"))
+        pvpMeta.lore(
+            listOf(
+                Component.text("Right click to allow pvp"),
+                Component.text("Left click to disable pvp")
+            ),
+        )
+        pvp.itemMeta = pvpMeta
+        inventory.setItem(16, pvp)
+
+        inventory
+    }
+
     @EventHandler
     fun onItemClick(event: PlayerInteractEvent) {
         val player = event.player
@@ -206,8 +270,15 @@ object BoundaryManager : Listener {
                     val selector = getSelector(center)
 
                     if (owner != null && owner != player.name) {
-                        player.spawnParticle(Particle.SMOKE, particle, 5)
-                        player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_SHULKER_TELEPORT, Sound.Source.PLAYER, 1f, 1f))
+                        player.spawnParticle(Particle.LARGE_SMOKE, particle, 5)
+                        player.playSound(
+                            Sound.sound(
+                                org.bukkit.Sound.ENTITY_SHULKER_TELEPORT,
+                                Sound.Source.PLAYER,
+                                1f,
+                                1f
+                            )
+                        )
 
                         player.sendActionBar(
                             Component
@@ -221,8 +292,15 @@ object BoundaryManager : Listener {
                                 )
                         )
                     } else if (selector != null && selector != player.name) {
-                        player.spawnParticle(Particle.SMOKE, particle, 5)
-                        player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_SHULKER_TELEPORT, Sound.Source.PLAYER, 1f, 1f))
+                        player.spawnParticle(Particle.LARGE_SMOKE, particle, 5)
+                        player.playSound(
+                            Sound.sound(
+                                org.bukkit.Sound.ENTITY_SHULKER_TELEPORT,
+                                Sound.Source.PLAYER,
+                                1f,
+                                1f
+                            )
+                        )
 
                         player.sendActionBar(
                             Component
@@ -239,8 +317,6 @@ object BoundaryManager : Listener {
                         if (isSelectedBy(center, player)) {
                             Bukkit.getLogger().info("${player.name} deselected $center")
 
-                            player.spawnParticle(Particle.FIREWORK, particle, 10)
-
                             player.persistentDataContainer.set(chunksTag, chunksType,
                                 list.filterNot { bytes -> bytes.contentEquals(serialized) })
 
@@ -248,8 +324,6 @@ object BoundaryManager : Listener {
                             deselectGuide(player, center)
                         } else {
                             Bukkit.getLogger().info("${player.name} selected $center")
-
-                            player.spawnParticle(Particle.HAPPY_VILLAGER, particle, 10)
 
                             player.persistentDataContainer.set(
                                 chunksTag, chunksType,
@@ -287,14 +361,14 @@ object BoundaryManager : Listener {
     fun onInventoryClick(event: InventoryClickEvent) {
         val player = Bukkit.getPlayer(event.whoClicked.name)!!
         if (isTracked(player)) {
+            val item = event.currentItem ?: return
+            val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
+
             if (event.clickedInventory?.equals(menuInventory) == true) {
                 event.isCancelled = true
-
-                val item = event.currentItem ?: return
-                val list = player.persistentDataContainer.get(chunksTag, chunksType) ?: listOf()
-
-                player.closeInventory()
                 if (item.type == Material.LIME_CONCRETE) {
+                    player.closeInventory()
+
                     var size = 0
                     for (serialized in list) {
                         val location = deserializeLocation(serialized)
@@ -322,6 +396,8 @@ object BoundaryManager : Listener {
 
                     quitBoundaryMode(player)
                 } else if (item.type == Material.RED_CONCRETE) {
+                    player.closeInventory()
+
                     var size = 0
                     for (serialized in list) {
                         val location = deserializeLocation(serialized)
@@ -349,18 +425,9 @@ object BoundaryManager : Listener {
 
                     quitBoundaryMode(player)
                 } else if (item.type == Material.GRAY_CONCRETE) {
-                    // TODO: other perms
-                    for (serialized in list) {
-                        val location = deserializeLocation(serialized)
-                        if (!ChunkManager.isOwnedBy(location, player))
-                            continue
-
-                        val perm = ChunkManager.getPermission(location, permBreakBlock)
-                        ChunkManager.setPermission(location, permBreakBlock, perm.not())
-                    }
-
-                    quitBoundaryMode(player)
+                    player.openInventory(permInventory)
                 } else if (item.type == Material.WHITE_CONCRETE) {
+                    player.closeInventory()
                     deselectAllChunks(player)
                     player.sendActionBar(
                         Component
@@ -369,6 +436,49 @@ object BoundaryManager : Listener {
                             .decorate(TextDecoration.BOLD)
                     )
                 }
+            } else if (event.clickedInventory?.equals(permInventory) == true) {
+                event.isCancelled = true
+
+                var perm: ChunkManager.Permission? = null
+                if (item.type == Material.NETHERITE_PICKAXE) {
+                    perm = ChunkManager.Permission.PERM_BREAK_BLOCK
+                } else if (item.type == Material.BRICKS) {
+                    perm = ChunkManager.Permission.PERM_PLACE_BLOCK
+                } else if (item.type == Material.TNT) {
+                    perm = ChunkManager.Permission.PERM_EXPLOSION
+                } else if (item.type == Material.IRON_SWORD) {
+                    perm = ChunkManager.Permission.PERM_PVP
+                }
+
+                if (perm == null) return
+                player.closeInventory()
+
+                var size = 0
+                for (serialized in list) {
+                    val location = deserializeLocation(serialized)
+                    if (!ChunkManager.isOwnedBy(location, player))
+                        continue
+
+                    ChunkManager.setPermission(location, perm, event.isRightClick)
+                    size++
+                }
+
+                if (size == 0) {
+                    player.sendActionBar(
+                        Component
+                            .text("No claimed chunks were selected")
+                            .color(NamedTextColor.RED)
+                    )
+                } else {
+                    player.sendActionBar(
+                        Component
+                            .text("Changed permissions for $size chunks")
+                            .color(NamedTextColor.GOLD)
+                            .decorate(TextDecoration.BOLD)
+                    )
+                }
+
+                quitBoundaryMode(player)
             } else {
                 quitBoundaryMode(player)
             }
