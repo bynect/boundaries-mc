@@ -58,6 +58,8 @@ object ChunkManager : Listener {
 
         perms[perm.index] = value
         location.chunk.persistentDataContainer.set(permTag, permType, perms)
+
+        Bukkit.getLogger().info("Permission $perm=$value for $location")
     }
 
     fun setPermissions(location: Location, perms: List<Boolean>) {
@@ -93,6 +95,8 @@ object ChunkManager : Listener {
                 return false
             pdc.set(ownerTag, ownerType, owner)
         }
+
+        Bukkit.getLogger().info("Owner to $owner for $location")
         return true
     }
 

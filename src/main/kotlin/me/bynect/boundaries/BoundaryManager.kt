@@ -145,15 +145,15 @@ object BoundaryManager : Listener {
     }
 
     private val menuInventory = run {
-        val title = Component.text("Boundary menu")
+        val title = Component.text("Boundary mode menu")
         val inventory = Bukkit.createInventory(null, 27, title)
 
         val claim = ItemStack.of(Material.LIME_CONCRETE)
         val claimMeta = claim.itemMeta
 
-        claimMeta.displayName(Component.text("Claim chunks"))
+        claimMeta.displayName(Component.text("Claim chunks").decorate(TextDecoration.BOLD))
         claimMeta.lore(
-            listOf(Component.text("Claim ownership of the selected chunks")),
+            listOf(Component.text("Claim ownership of the selected chunks").color(NamedTextColor.WHITE)),
         )
         claim.itemMeta = claimMeta
         inventory.setItem(10, claim)
@@ -161,9 +161,9 @@ object BoundaryManager : Listener {
         val unclaim = ItemStack.of(Material.RED_CONCRETE)
         val unclaimMeta = unclaim.itemMeta
 
-        unclaimMeta.displayName(Component.text("Release chunks"))
+        unclaimMeta.displayName(Component.text("Release chunks").decorate(TextDecoration.BOLD))
         unclaimMeta.lore(
-            listOf(Component.text("Release ownership of the selected chunks")),
+            listOf(Component.text("Release ownership of the selected chunks").color(NamedTextColor.WHITE)),
         )
         unclaim.itemMeta = unclaimMeta
         inventory.setItem(12, unclaim)
@@ -171,9 +171,9 @@ object BoundaryManager : Listener {
         val change = ItemStack.of(Material.GRAY_CONCRETE)
         val changeMeta = change.itemMeta
 
-        changeMeta.displayName(Component.text("Change permissions"))
+        changeMeta.displayName(Component.text("Change permissions").decorate(TextDecoration.BOLD))
         changeMeta.lore(
-            listOf(Component.text("Change the permissions for the chunks")),
+            listOf(Component.text("Change the permissions of the selected chunks").color(NamedTextColor.WHITE)),
         )
         change.itemMeta = changeMeta
         inventory.setItem(14, change)
@@ -181,9 +181,9 @@ object BoundaryManager : Listener {
         val reset = ItemStack.of(Material.WHITE_CONCRETE)
         val resetMeta = reset.itemMeta
 
-        resetMeta.displayName(Component.text("Reset selection"))
+        resetMeta.displayName(Component.text("Reset selection").decorate(TextDecoration.BOLD))
         resetMeta.lore(
-            listOf(Component.text("Deselect all chunks")),
+            listOf(Component.text("Deselect all chunks").color(NamedTextColor.WHITE)),
         )
         reset.itemMeta = resetMeta
         inventory.setItem(16, reset)
@@ -192,17 +192,17 @@ object BoundaryManager : Listener {
     }
 
     private val permInventory = run {
-        val title = Component.text("Permission menu")
+        val title = Component.text("Change permissions")
         val inventory = Bukkit.createInventory(null, 27, title)
 
         val destroy = ItemStack.of(Material.NETHERITE_PICKAXE)
         val destroyMeta = destroy.itemMeta
 
-        destroyMeta.displayName(Component.text("Block destruction"))
+        destroyMeta.displayName(Component.text("Block destruction").decorate(TextDecoration.BOLD))
         destroyMeta.lore(
             listOf(
-                Component.text("Right click to allow block destruction"),
-                Component.text("Left click to disable block destruction")
+                Component.text("Left click to allow block destruction").color(NamedTextColor.WHITE),
+                Component.text("Right click to disallow block destruction").color(NamedTextColor.WHITE),
             ),
         )
         destroy.itemMeta = destroyMeta
@@ -211,11 +211,11 @@ object BoundaryManager : Listener {
         val place = ItemStack.of(Material.BRICKS)
         val placeMeta = place.itemMeta
 
-        placeMeta.displayName(Component.text("Block placement"))
+        placeMeta.displayName(Component.text("Block placement").decorate(TextDecoration.BOLD))
         placeMeta.lore(
             listOf(
-                Component.text("Right click to allow block placement"),
-                Component.text("Left click to disable block placement")
+                Component.text("Left click to allow block placement").color(NamedTextColor.WHITE),
+                Component.text("Right click to disallow block placement").color(NamedTextColor.WHITE),
             ),
         )
         place.itemMeta = placeMeta
@@ -224,11 +224,11 @@ object BoundaryManager : Listener {
         val tnt = ItemStack.of(Material.TNT)
         val tntMeta = tnt.itemMeta
 
-        tntMeta.displayName(Component.text("Change permissions"))
+        tntMeta.displayName(Component.text("Explosion").decorate(TextDecoration.BOLD))
         tntMeta.lore(
             listOf(
-                Component.text("Right click to allow explosions"),
-                Component.text("Left click to disable explosions")
+                Component.text("Left click to allow explosion").color(NamedTextColor.WHITE),
+                Component.text("Right click to disallow explosion").color(NamedTextColor.WHITE),
             ),
         )
         tnt.itemMeta = tntMeta
@@ -237,11 +237,11 @@ object BoundaryManager : Listener {
         val pvp = ItemStack.of(Material.IRON_SWORD)
         val pvpMeta = pvp.itemMeta
 
-        pvpMeta.displayName(Component.text("Player combat"))
+        pvpMeta.displayName(Component.text("Player combat").decorate(TextDecoration.BOLD))
         pvpMeta.lore(
             listOf(
-                Component.text("Right click to allow pvp"),
-                Component.text("Left click to disable pvp")
+                Component.text("Left click to allow pvp").color(NamedTextColor.WHITE),
+                Component.text("Right click to disallow pvp").color(NamedTextColor.WHITE),
             ),
         )
         pvp.itemMeta = pvpMeta
@@ -459,7 +459,7 @@ object BoundaryManager : Listener {
                     if (!ChunkManager.isOwnedBy(location, player))
                         continue
 
-                    ChunkManager.setPermission(location, perm, event.isRightClick)
+                    ChunkManager.setPermission(location, perm, event.isLeftClick)
                     size++
                 }
 
