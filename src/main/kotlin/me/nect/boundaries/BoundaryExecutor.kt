@@ -1,4 +1,4 @@
-package me.bynect.boundaries
+package me.nect.boundaries
 
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.HoverEvent

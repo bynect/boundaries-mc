@@ -1,4 +1,4 @@
-package me.bynect.boundaries
+package me.nect.boundaries
 
 import com.comphenix.protocol.ProtocolLibrary
 import com.comphenix.protocol.ProtocolManager

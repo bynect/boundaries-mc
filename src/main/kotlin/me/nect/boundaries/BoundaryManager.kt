@@ -1,17 +1,17 @@
 @file:Suppress("UnstableApiUsage")
 
-package me.bynect.boundaries
+package me.nect.boundaries
 
-import me.bynect.boundaries.ChunkManager.deselectAllChunks
-import me.bynect.boundaries.ChunkManager.deselectChunk
-import me.bynect.boundaries.ChunkManager.deselectGuide
-import me.bynect.boundaries.ChunkManager.deserializeLocation
-import me.bynect.boundaries.ChunkManager.getOwner
-import me.bynect.boundaries.ChunkManager.getSelector
-import me.bynect.boundaries.ChunkManager.isSelectedBy
-import me.bynect.boundaries.ChunkManager.selectChunk
-import me.bynect.boundaries.ChunkManager.selectGuide
-import me.bynect.boundaries.ChunkManager.serializeLocation
+import me.nect.boundaries.ChunkManager.deselectAllChunks
+import me.nect.boundaries.ChunkManager.deselectChunk
+import me.nect.boundaries.ChunkManager.deselectGuide
+import me.nect.boundaries.ChunkManager.deserializeLocation
+import me.nect.boundaries.ChunkManager.getOwner
+import me.nect.boundaries.ChunkManager.getSelector
+import me.nect.boundaries.ChunkManager.isSelectedBy
+import me.nect.boundaries.ChunkManager.selectChunk
+import me.nect.boundaries.ChunkManager.selectGuide
+import me.nect.boundaries.ChunkManager.serializeLocation
 import net.kyori.adventure.sound.Sound
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor

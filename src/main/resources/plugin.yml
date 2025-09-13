@@ -1,9 +1,9 @@
 name: boundaries
 version: 0.0.1
-main: me.bynect.boundaries.Boundaries
+main: me.nect.boundaries.Boundaries
 api-version: '1.21'
 description: Boundaries...
-author: bynect
+author: nect
 commands:
   boundary:
     description: Open boundary mode

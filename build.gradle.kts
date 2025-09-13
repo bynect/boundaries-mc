@@ -5,7 +5,7 @@ plugins {
     id("xyz.jpenilla.run-paper") version "2.3.0"
 }
 
-group = "me.bynect"
+group = "me.nect"
 version = "0.0.1"
 
 repositories {

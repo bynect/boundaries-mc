@@ -1,8 +1,8 @@
-package me.bynect.boundaries
+package me.nect.boundaries
 
-import me.bynect.boundaries.BoundaryManager.chunksTag
-import me.bynect.boundaries.BoundaryManager.chunksType
-import me.bynect.boundaries.BoundaryManager.isTracked
+import me.nect.boundaries.BoundaryManager.chunksTag
+import me.nect.boundaries.BoundaryManager.chunksType
+import me.nect.boundaries.BoundaryManager.isTracked
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
